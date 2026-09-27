@@ -745,4 +745,66 @@ controle qui manque est de relire ce que la commande a reellement imprime —
 `res.Tolerance` dit ici 5,2525 px pour une tolerance demandee de 0,15, ce qui
  aurait du etre le signal depuis le debut.
 
+### Combien `-curves` vaut, et de quoi ça dépend
+
+La question « `-curves` vaut-il 24× ou 5,9× ? » n'a pas de réponse sans dire le
+plafond. Le chemin courbé produit **4 199 nœuds quelle que soit la limite**,
+parce qu'il n'approche jamais un plafond serré ; le chemin lignes, lui, est
+dégradé de plus en plus à mesure que la limite descend. Treize cas, `k=16`,
+`-tol 0,25` :
+
+| plafond | lignes | courbes | ratio | cas où la boucle a escaladé |
+|--:|--:|--:|--:|--:|
+| 500 | 4 295 | 4 199 | **1,0×** | 12 sur 13 |
+| 1 000 | 7 764 | 4 199 | 1,8× | 11 sur 13 |
+| 2 000 | 11 388 | 4 199 | 2,7× | 8 sur 13 |
+| 4 000 | 24 656 | 4 199 | 5,9× | 6 sur 13 |
+| 8 000 | 46 595 | 4 199 | 11,1× | 5 sur 13 |
+| 20 000 | 65 431 | 4 199 | 15,6× | 2 sur 13 |
+| aucun | 153 925 | 4 199 | 36,7× | 0 sur 13 |
+
+Donc le gain de `-curves` est **une fonction du plafond, et rien d'autre**. Il
+n'est pas une compression générale : c'est un mode qui compte lorsqu'on a de la
+place dans le budget de nœuds. À 500 nœuds par cas, les deux modes rendent
+4 295 et 4 199 nœuds, et c'est le plafond qui décide, pas le mode : le chemin
+courbé n'a plus rien à apporter parce qu'il ne peut plus être simplifié
+davantage, et le chemin lignes a été désarmé jusqu'au même compte.
+
+C'est la réponse à la question de la Suite, et elle n'est pas « oui ou non » :
+`-curves` est pertinent à D6 = 20 000 où il rend 15,6×, il est encore utile à
+4 000 où il rend 5,9×, et il est **inert en dessous de 1 000**. Le coût reste le
+même dans les trois cas, environ +0,008 à +0,010 de RMSE. La décision dépend
+donc du budget que le programme s'autorise, et cette question-là n'est pas
+technique.
+
+Les deux protocoles sont donc complements, pas concurrents. Sans plafond : 24,0×
+sur 154 243 → 6 435 nœuds, Δscore moyen +0,0103, pire cas +0,0274 sur
+`logo/mark`, meilleur −0,0001 sur `synthetic/arrow`, donc du bruit. Avec un
+plafond de 4 000 : 5,9× sur 24 656 → 4 199, Δscore moyen +0,0079. Le protocole
+bridé flatte la ligne, parce qu'il la dégrade, donc il sous-estime le mode. Le
+protocole libre est le bon pour « combien de nœuds coûte ce mode », le bridé est
+le bon pour « à budget fixé, qui est le plus fidèle ».
+
 ## Suite
+
+1. **Documenter `-curves` par sa courbe, pas par un oui ou non.** La question est
+   tranchee : le mode rend 15,6× a un plafond de 20 000 noeuds, 5,9× a 4 000, et
+   1,0× a 500, parce que le chemin courbe rend toujours 4 199 noeuds et que la
+   ligne, elle, est degradee jusqu'au plafond. Ce n'est pas une compression
+   generale, c'est un mode qui compte quand le budget de noeuds est large. Le cout
+   est constant, environ 0,01 de RMSE. Reste a decider si le defaut reste le chemin
+   lignes et si le mode se documente par cette courbe ou par un seuil, et a quel
+   seuil. Le corpus est toujours mince sur le contenu, six des treize cas etant
+   ecrits pour le test.
+2. **Un test qui compare deux rasters a deux echelles.** Le comportement du
+   traceur depend de l'echelle de rasterisation, pas seulement de la forme, et
+   rien ne le verifie. Ce qui est etabli : le chemin lignes paie la resolution au
+   proportionnel, 4,0× de noeuds pour 4×, et le chemin courbe non, 1,87×. Ce qui
+   ne l'est pas : pourquoi. Les deux hypotheses testees sont refutees, la rampe
+   d'antialiasing et la tolerance proportionnelle. Un test qui figerait le
+   comportement non explique risquerait de figer un defaut.
+3. **Etendre le corpus** vers les 30 a 60 cas prevus, ce qui decide notamment du
+   sort de `prune` et donnerait a `ui/panel` le poids d'un cas reel et non d'un
+   seul exemple. C'est le seul point de la Suite qui demande du travail humain
+   et non une mesure de plus.
+4. Puis seulement : grain / tramage, et l'axe video de D1.

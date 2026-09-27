@@ -315,7 +315,17 @@ bench-baselines: convert $(GOBIN)/svgstat ## Re-encode then measure assets/svg a
 # One row per corpus file, plus the two reference encoders on the same inputs, so
 # the tracer is scored against the same raster the baselines see.
 CORPUS_TOL      ?= 0.25
-CORPUS_MAX_NODES ?= 20000
+# No node ceiling here, on purpose. A ceiling makes the budget loop escalate the
+# tolerance until the document fits, so a "trace at -tol 0.25" row stops being a
+# trace at 0.25: on logo/mark it came out at 1.0, and on logo/mark-scaled at 8.42,
+# thirty-four times the requested tolerance, presented as the baseline. A ceiling
+# also compares badly when it binds one mode and not the other, which it did here:
+# the line path was pushed to fit 20000 while the curve path never came near it.
+#
+# So the baseline rows report what each encoder produces, unconstrained, and D6
+# compliance is a separate question, answered by corpus-frontier, which holds both
+# modes to the same ceiling and prints the effective tolerance beside the
+# requested one. The ceiling is FRONTIER_BUDGET, not this.
 # The backdrop corpus-bench composites the source over. It must match svgstat's -bg,
 # which defaults to white: a different pair measures a render against a reference
 # prepared by another rule.
@@ -356,9 +366,8 @@ corpus-bench: $(GOBIN)/svgimg $(GOBIN)/svgstat ## Trace every corpus raster and 
 			for m in grid runlength trace trace-bg trace-curves; do \
 				out='$(CORPUS_TRACE)'/"$$cat-$$name-$$m.svg"; \
 				enc=$$m; extra=''; \
-				[ "$$m" = trace ] && extra="-max-nodes $(CORPUS_MAX_NODES)"; \
-				if [ "$$m" = trace-bg ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -bg $(CORPUS_BG)"; fi; \
-				if [ "$$m" = trace-curves ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -curves -curve-tol $(CORPUS_CURVE_TOL) -curve-simplify $(CORPUS_CURVE_SIMPLIFY)"; fi; \
+				if [ "$$m" = trace-bg ]; then enc=trace; extra="-bg $(CORPUS_BG)"; fi; \
+				if [ "$$m" = trace-curves ]; then enc=trace; extra="-curves -curve-tol $(CORPUS_CURVE_TOL) -curve-simplify $(CORPUS_CURVE_SIMPLIFY)"; fi; \
 				$(GOBIN)/svgimg -in "$$png" -mode "$$enc" -k $(BASELINE_K) -tol $(CORPUS_TOL) \
 					$$extra -out "$$out" >/dev/null 2>&1 || continue; \
 				$(GOBIN)/svgstat "$$out" --ref "$$png" --oracle $(ORACLE) -bg $(CORPUS_BG) \
