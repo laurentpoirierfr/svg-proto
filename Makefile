@@ -214,7 +214,7 @@ corpus-render: ## Render every testdata/corpus/*.svg to its matching .png via th
 # The corpus is laid out as testdata/corpus/<category>/*.{svg,png}, where the
 # matching raster shares the base name. The category is the directory name, so
 # aggregating by category needs no manifest.
-CORPUS_CATS := logo icon ui screenshot lineart pixelart photo alpha anim
+CORPUS_CATS := logo icon ui screenshot lineart pixelart photo alpha anim synthetic
 
 .PHONY: corpus
 corpus: $(GOBIN)/svgstat ## Report corpus coverage by category

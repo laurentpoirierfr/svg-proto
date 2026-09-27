@@ -488,6 +488,44 @@ Les nœuds sont la contrainte dure de D6, pas les octets : ils ne se compriment 
 Sur ce critère, `-curves` gagne sur six cas sur sept, jusqu'à 12×, et
 `logo/mark-scaled` est le seul où il en perd.
 
+#### Six cas diagonaux, et ce qu'ils disent du correctif de signe
+
+Le corpus n'a presque pas de diagonales, et c'est exactement la géométrie que le
+correctif de signe visait. Six cas écrits pour ça sont donc ajoutés dans
+`testdata/corpus/synthetic/`, catégorie nommée pour ce qu'elle est : du contenu
+écrit pour le test, pas du contenu tiers. Ils sont rendus par l'oracle comme les
+autres.
+
+| cas | octets `trace` | octets `-curves` | nœuds `trace` | nœuds `-curves` | score `+` |
+|---|--:|--:|--:|--:|--:|
+| `diagonal-stroke` | 132 090 | 2 891 (46×) | 9 916 | 209 (47×) | +0,0195 |
+| `diagonal-square` | 123 666 | 2 915 (42×) | 9 278 | 198 (47×) | **−0,0002** |
+| `chevron` | 37 457 | 929 (40×) | 2 809 | 54 (52×) | +0,0154 |
+| `tri-blade` | 130 341 | 3 918 (33×) | 9 664 | 276 (35×) | +0,0066 |
+| `arrow` | 20 192 | 759 (27×) | 1 480 | 38 (39×) | **−0,0001** |
+| `diag-stripes` | 29 430 | 1 226 (24×) | 2 226 | 108 (21×) | +0,0093 |
+
+Là, l'écart est d'un tout autre ordre que sur le reste du corpus : 24× à 46×,
+et le score ne bouge pas sur deux cas. Les formes à coins francs et bords
+diagonaux sont précisément celles que la ligne gaspille le plus.
+
+**Et le correctif de signe n'y change rien.** A/B sur ces six cas, nœuds et score
+identiques au chiffre près avec la règle non signée. C'est un résultat qu'il
+fallait mesurer plutôt que supposer, et il infirme ce que j'écrivais au commit
+précédent.
+
+La raison est simple une fois vue : la classification de coins ne départage la
+marche d'escalier que si la marche est encore là. Or la simplification non pondérée
+la supprime en amont, et ce que le fitter reçoit est déjà un polygone grossier —
+198 points pour un carré de 256 px. Il n'y a plus de marches à confondre avec des
+coins. Le correctif est juste, son test le prouve sur une boucle construite pour
+ça, mais le pipeline ne lui présente jamais les conditions qui le rendaient
+nécessaire. Sa légère dégradation sur l'ancien corpus est donc une perte sèche.
+
+Ce qui reste à `polygon` est utile — préserver les vrais coins d'un polygone
+grossier, pour que le carré reste un carré — mais c'est une fonction plus simple
+que ce que la section précédente lui prête.
+
 Sur les deux photos de `assets/png`, en `-k 8` :
 
 | image | octets `trace` | octets `-curbes` | ratio | ssim `trace` | ssim `-curves` |
@@ -511,10 +549,12 @@ pendant que `trace` plafonne à 0,8392.
 
 ## Suite
 
-1. **Trancher `-curves`.** Le chemin est maintenant un échange mesuré, 2,6× à 12×
-   moins de nœuds contre ~0,02 de score. Ce qui manque n'est plus la mécanique mais
-   la décision : est-ce un mode qu'on expose, et à quelles conditions ? La question
-   se tranche sur le contenu, donc sur un corpus plus large qu'à présent.
+1. **Trancher `-curves`.** Sur treize cas, dont six diagonaux où l'écart atteint
+   46×, l'argument tient mieux qu'il ne tenait. Ce qui manque n'est plus la
+   mécanique mais la décision : est-ce un mode qu'on expose, et à quelles
+   conditions ? Le corpus est encore trop mince sur le *contenu* — six des treize
+   cas sont écrits pour le test, donc ils prouvent la géométrie et pas la
+   diversité.
 2. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
    20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
 3. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
