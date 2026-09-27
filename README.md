@@ -143,7 +143,7 @@ internal/pixelbuf   décodage, buffer planaire, sRGB -> linéaire -> OKLab, alph
 internal/quant      median-cut en OKLab, sans tramage
 internal/field      lissage anisotrope, gradient, magnitude
 internal/contour    marching squares sous-pixel, topologie, imbrication
-internal/polygon    coins réels vs artefacts de raster, isolation du virage
+internal/polygon    coins réels vs artefacts de raster, virages signés
 internal/simplify   Douglas-Peucker à tolérance pondérée par le gradient
 internal/curvefit   ajustement de Béziers, coins préservés, subdivision
 internal/pathdata   construction et minimisation des `d`
@@ -197,7 +197,7 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -curve-s
 | 0 | instrument de mesure | **fait** — corpus de 7 cas dans `testdata/corpus/<cat>/<nom>.{svg,png}`, mesuré dans [docs/corpus-bench.md](docs/corpus-bench.md) |
 | 1 | baselines (encapsulation, grille, run-length) | **fait** — mesuré sur `assets/png`, voir [docs/phase1.md](docs/phase1.md) |
 | 2 | traceur de contours — le cœur | **fait** — 4 à 17 éléments DOM au lieu de 68 à 2 247 sur le corpus, voir [docs/phase2.md](docs/phase2.md) |
-| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration perdait parce qu'elle ajustait la marche du tracé, elle échange maintenant 2,6× à 12× de taille contre ~0,02 de score, voir [docs/phase2.md](docs/phase2.md) |
+| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration perdait parce qu'elle ajustait la marche du tracé, elle échange maintenant 2,6× à 12× de nœuds contre ~0,02 de score, voir [docs/phase2.md](docs/phase2.md) |
 | 3 | modes (pixel art, screenshot+texte, trait, photo) | à faire |
 | 4 | sémantique, accessibilité, IDs stables | à faire |
 | 5 | vidéo (tracking, delta, animation par transformation) | à faire |

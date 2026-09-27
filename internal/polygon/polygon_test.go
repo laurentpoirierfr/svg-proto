@@ -59,23 +59,21 @@ func TestRectangleCornersSurvive(t *testing.T) {
 	}
 }
 
-// Known limitation, recorded as a test so the gap is visible and has a target.
+// The case that needed the signed turn, and the reason it is signed.
 //
-// Where a staircase meets a straight edge, the corner is not found. The corner
-// turns 90 degrees, and the two vertices of the staircase beside it turn about 45
-// degrees over a pixel, so there is another turn inside MinCornerGap on the
-// staircase side and the corner is judged not isolated. Raising QuietAngle to let
-// a 45-degree step count as straight ground fixes this case and breaks others, so
-// the discriminator it needs is finer than one angle threshold: it has to tell a
-// staircase's steady diagonal from a genuine change of direction, which is a
-// question about the run of turns, not about any one of them.
+// A staircase's steps rotate -90, +90, -90, +90: each step is undone by the next
+// while the absolute angle at every vertex reads 90, exactly as it does at a real
+// corner. Reading magnitude alone, a staircase is indistinguishable from a row of
+// right angles, and both readings of the rule fail at once. A threshold loose
+// enough to accept the corner at the end of the staircase also accepts the twelve
+// steps leading up to it; a threshold tight enough to reject the steps rejects the
+// corner too, because it has its neighbour a pixel away.
 //
-// The two corners that sit between straight edges are found, which is why this
-// reports 2 rather than 0. A shape whose corners all have straight ground on both
-// sides is unaffected, and that covers an axis-aligned rectangle, which is the
-// common case: marching squares traces an axis-aligned boundary as a straight
-// run, so its edges have no staircase to begin with.
-func TestCornerAtTheEndOfAStaircaseIsNotFound(t *testing.T) {
+// Reading the sign separates them. A corner at the end of a staircase has a
+// straight run on one side and an alternating run on the other. A step in the
+// middle of the staircase has alternating runs on both sides, and no straight run
+// anywhere, so there is no state for it to change into.
+func TestCornerAtTheEndOfAStaircaseIsFound(t *testing.T) {
 	var l contour.Loop
 	// Bottom edge: a staircase, so the boundary turns repeatedly and the corner at
 	// its end has to be recognised from the quiet run that follows it.
@@ -96,9 +94,19 @@ func TestCornerAtTheEndOfAStaircaseIsNotFound(t *testing.T) {
 		l = append(l, contour.Pt{X: 0, Y: 10 - float64(i)})
 	}
 	res := Approximate(l, DefaultOptions())
-	if len(res.Corners) != 2 {
-		t.Errorf("found %d corners, want the 2 that sit between straight edges: %v",
-			len(res.Corners), res.Corners)
+	if len(res.Corners) != 4 {
+		t.Errorf("found %d corners, want all 4: %v", len(res.Corners), res.Corners)
+	}
+	// The four turns of the rectangle itself, not the twelve steps of either
+	// staircase, which is the part that was previously being got wrong.
+	want := []int{0, 12, 22, 35}
+	if len(res.Corners) == len(want) {
+		for i, w := range want {
+			if res.Corners[i] != w {
+				t.Errorf("corners %v, want %v", res.Corners, want)
+				break
+			}
+		}
 	}
 }
 
