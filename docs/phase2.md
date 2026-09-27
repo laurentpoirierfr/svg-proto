@@ -717,11 +717,19 @@ marche, et les deux grandissent ensemble, donc le quotient est invariant
 d'echelle. Les points traces bruts le confirmaient deja : 23 925 a 256, 94 765 a
 1024, soit 3,96x pour 4x, exactement comme le perimetre.
 
-Le chemin courbe est en **racette** de la resolution, a moins de 5 % : 1,00, 1,40,
-1,87, 2,80 contre 1, 1,41, 2,00, 2,83. La, c'est de l'ajustement de courbe : un
-arc de rayon `R` ajuste a une tolerance `t` demande `n` segments de l'ordre de
-`racette(R / 8t)`, donc `racette(R)` a `t` fixe. L'exposant 0,5 est mesure, il
-n'est pas suppose.
+Le chemin courbe est **sous-lineaire**, en racine de la resolution sur ce logo :
+1,00, 1,40, 1,87, 2,80 contre 1, 1,41, 2,00, 2,83, donc a moins de 5 %. La
+justification est geometrique : un arc de rayon `R` ajuste a une tolerance `t`
+demande `n` segments de l'ordre de `racette(R / 8t)`, donc `racette(R)` a `t`
+fixe.
+
+**Mais 0,5 n'est pas une loi, c'est une propriete de ce dessin.** Le test
+`TestLineNodesScaleWithResolutionAndCurveNodesDoNot` mesure l'exposant sur un
+disque et trouve 0,35, pas 0,5 : sur x16, 190 noeuds en lignes contre 21 en
+courbes a x1, et 2 818 contre 56, donc exposants 0,97 et 0,35. Le test ne fige
+donc que ce qui est solide, la ligne lineaire a 0,85 pres et la courbe sous 0,6
+avec un ecart d'au moins 0,25, parce que c'est l'ecart qui fait croitre le
+rapport. Figer 0,5 figerait une coincidence.
 
 **Les deux lois ensemble disent pourquoi `-curves` vaut de plus en plus.** Le
 rapport vaut `R / racine(R)`, donc il croit comme `racette(R)` : 22,6x a 256,
@@ -839,13 +847,10 @@ le bon pour « à budget fixé, qui est le plus fidèle ».
    lignes et si le mode se documente par cette courbe ou par un seuil, et a quel
    seuil. Le corpus est toujours mince sur le contenu, six des treize cas etant
    ecrits pour le test.
-2. **Un test qui verifie les deux lois d'echelle.** Elles sont mesurees sur quatre
-   resolutions et elles portent la seule raison serieuse d'exposer `-curves` :
-   lignes lineaires en resolution, courbes en racine, donc un rapport en racine.
-   Rien ne les verifie aujourd'hui, et ce sont exactement le genre de propriete
-   silencieuse qu'une refonte casserait sans qu'on le voie. Le test doit
-   synthetiser ses rasters, pour ne dependre ni d'inkscape ni d'un fichier
-   d'image de plus dans le corpus.
+2. ~~Un test qui verifie les lois d'echelle.~~ **Fait** :
+   `TestLineNodesScaleWithResolutionAndCurveNodesDoNot`, qui synthetise ses
+   rasters, ne depend ni d'inkscape ni d'un image de plus, et ne fige que
+   l'ecart entre les exposants, pas l'exposant lui-meme.
 3. **Etendre le corpus** vers les 30 a 60 cas prevus, ce qui decide notamment du
    sort de `prune` et donnerait a `ui/panel` le poids d'un cas reel et non d'un
    seul exemple. C'est le seul point de la Suite qui demande du travail humain
