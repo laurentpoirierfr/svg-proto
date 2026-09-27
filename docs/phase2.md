@@ -613,42 +613,56 @@ Ce que cela dit du contenu tient toujours : `pixelart/blob` reste l'argument le
 plus fort en faveur des Béziers, `grid` le restituant exactement (ssim 1,0000)
 pendant que `trace` plafonne à 0,8392.
 
-### `-tol` n'est pas un curseur lisse
+### `-tol` est lisse, et le tableau qui disait le contraire mesurait autre chose
 
-Trois mesures qui invalident l'idée que `-tol` est un curseur de budget
-continu. Noeuds en sortie, chemin lignes, `k=16` :
+Le tableau publie dans le commit precedent, avec son plateau a 17 783 noeuds et
+ses inversions, **etait faux**. Il mesurait la boucle de budget, pas le
+simplificateur. Avec `-max-nodes 20000`, la boucle escalade la tolerance jusqu'a
+passer sous le plafond, donc la sortie est plaquée contre le plafond et sa
+forme reflete les iterations de la boucle. Il faut mesurer **sans** plafond. Le
+veritable, `k=16`, chemin lignes :
 
 | `-tol` | mark 256 | panel | mark 1024 |
 |--:|--:|--:|--:|
-| 0,001 | 23 746 | 1 548 | 93 262 |
-| 0,01 | 21 423 | 1 544 | 82 654 |
-| 0,0625 | 17 783 | 1 481 | 54 964 |
-| 0,25 | **17 783** | 1 304 | **2 816** |
-| 1 | 17 783 | 995 | 3 033 |
-| 4 | 8 174 | 539 | 3 033 |
-| 16 | 947 | 522 | 2 044 |
+| 0,001 | 23 941 | 1 548 | 95 000 |
+| 0,0625 | 23 481 | 1 481 | 92 536 |
+| 0,25 | 21 833 | 1 304 | 87 260 |
+| 1 | 17 783 | 995 | 71 975 |
+| 4 | 8 174 | 539 | 35 396 |
+| 5 | 5 035 | **464** | 23 243 |
+| 6 | 2 815 | 505 | 11 368 |
+| 8 | 1 419 | 465 | 3 033 |
+| 10 | 1 188 | 439 | 2 428 |
+| 12 | 1 081 | **422** | 2 289 |
+| 16 | 947 | 468 | 2 044 |
+| 20 | 863 | 512 | 1 874 |
 | 64 | 615 | 547 | 1 392 |
-| 256 | 499 | 671 | 1 163 |
 
-Trois choses. Un **plateau** : sur `mark` 256, 17 783 noeuds de 0,0625 a 1,
-seize fois la plage pour rien. Une **falaise** : sur `mark` 1024, 54 964 a
-2 816 entre 0,0625 et 0,25, vingt fois pour quatre fois la tolerance. Et des
-**inversions** : `panel` remonte de 522 a 671 entre 16 et 256, `mark` 1024 de
-2 816 a 3 033 entre 0,25 et 1. Ce dernier point n'est pas anodin :
-`budget = Tolerance * Reference / (Reference + gradient)` donne un budget
-d'erreur par point, et Douglas-Peucker ne conserve pas ses points entre deux
-tolerances, donc plus de tolerance peut garder plus de points.
+**Il n'y a pas de plateau.** Sur les deux logos la reponse est strictement
+decroissante. Ce qui ressemble a une falaise, de 8 174 a 1 419 entre 4 et 8 sur
+`mark` 256 et de 11 368 a 3 033 entre 6 et 8 sur `mark` 1024, est une pente
+forte mais continue, pas une discontinuite.
 
-Consequence de methode : le point de reglage du corpus, `-tol 0,25`, n'est pas
-un point neutre. Il est **dans le plateau** de `mark` 256 et **juste apres la
-falaise** de `mark` 1024, dont le compte de noeuds changerait de vingt fois pour
-un quart de la tolerance. Les deux consequences sont opposees, et il faut les
-dire toutes les deux.
+**Il reste une non-monotonie, mais elle est etroite.** `panel` descend a 422
+noeuds a `-tol 12` puis **remonte** a 468, 512, 547. Soit 30 % de noeuds en plus
+pour une tolerance 5 fois plus grande. C'est coherent avec
+`budget = Tolerance * Reference / (Reference + gradient)` : le budget d'erreur
+est par point, et Douglas-Peucker ne conserve pas ses points entre deux
+tolerances, donc plus de tolerance peut garder plus de points. Le phenomene est
+la sur de tres petites images a peu de bandes, ou l'erreur domine le compte.
 
-### La boucle de budget ne fait presque rien, et c'est normal
+**La consequence de methode, corrigee.** Le point de reglage du corpus,
+`-tol 0,25`, n'est pas dans une zoneplate : il est dans la partie **douce** de la
+courbe, ou le compte de noeuds bouge de 23 481 a 21 833 sur `mark` 256. Il est
+donc un point sage, mais aussi un point ou le curseur ne fait presque rien. Le
+plafond de noeuds ne mord vraiment qu'entre `-tol 4` et `-tol 8`, la ou la
+courbe chute de 5,8 fois. C'est la que se joue D6, et c'est aussi la que la
+boucle de budget doit atteindre, donc la ou elle travaille le plus.
 
-A `-max-nodes 4000`, sur les treize cas du corpus, la sortie n'utilise que
-**24 656 des 52 000 noeuds autorises, soit 47 %**, et aucun cas ne depasse :
+### La boucle de budget ne gaspille rien
+
+A `-max-nodes 4000`, les treize cas du corpus n'utilisent que **24 656 des
+52 000 noeuds autorises, soit 47 %**, et aucun ne depasse :
 
 | cas | noeuds | usage | cas | noeuds | usage |
 |---|--:|--:|---|--:|--:|
@@ -662,10 +676,9 @@ A `-max-nodes 4000`, sur les treize cas du corpus, la sortie n'utilise que
 
 J'ai lu ca comme du gaspillage et ecrit une variante de la boucle qui encadre
 le budget puis bissectionne, pour depenser le budget disponible. **Elle ne
-change rien**, et la raison est dans le tableau : hors `logo/mark`, le premier
-essai a `-tol 0,25` est deja sous le budget, donc la boucle n'est jamais
-atteinte, et sur `mark` le plateau lui laisse rien a gagner. Le changement a ete
-reverté.
+change rien** : hors `logo/mark` le premier essai a `-tol 0,25` est deja sous le
+budget, donc la boucle n'est jamais atteinte, et sur `mark` elle n'a rien a
+gagner. Le changement a ete reverté.
 
 La lecture juste etait l'inverse. D6 est un **plafond**, pas une cible, et le
 travail de l'encodeur est de minimiser la taille sous les contraintes. Ne pas
@@ -673,26 +686,27 @@ utiliser tout le budget n'est pas un defaut, c'est le but : chaque noeud non
 employe est un noeud qui ne coute rien en octets. Ce que le tableau dit
 vraiment, c'est qu'a `-tol 0,25` la fidelite est deja bonne et la taille
 minimale, et que `-max-nodes` n'a aucun mordant sur ce corpus, sauf sur
-`logo/mark`, le seul cas a depasser 20 000 points.
+`logo/mark`, le seul cas a depasser 20 000 points au point de reglage.
+
+### Deux erreurs de mesure de ma part
+
+Elles se ressemblent et il faut les nommer, parce qu'elles ont produit deux
+fausses conclusions_successives.
+
+1. `make ci` ne reconstruit pas `bin/`. Une comparaison a rendu un resultat
+   identique au bit pres, j'en ai conclu « neutre », et il n'y avait rien a
+   changer : je mesurais un binaire perime. Des lors `make build` avant toute
+   mesure.
+2. Plus grave, et de la meme famille : j'ai balaye `-tol` **avec** `-max-nodes
+   20000**. Le sujet mesure n'etait alors pas la reponse du simplifyeur mais la
+   boucle de budget, qui escalade la tolerance jusqu'a passer sous le plafond.
+   Le resultat est un tableau correct de la boucle, presente comme une
+   propriete du curseur, avec un plateau et des inversions qui n'existent pas.
+   Le tableau actuel, lui, est mesure sans plafond.
+
+Les deux ont la meme cause : croire la sortie et la reconstruire. Le
+controle qui manque est de relire ce que la commande a reellement imprime —
+`res.Tolerance` dit ici 5,2525 px pour une tolerance demandee de 0,15, ce qui
+ aurait du etre le signal depuis le debut.
 
 ## Suite
-
-1. **Trancher `-curves`.** La frontière est mesurée (§ « la frontière »), le gain
-   va de 1,1× à 68× en nœuds pour ~0,01 de RMSE, et aucun réglage n'est gratuit :
-   9 cas sur 13 paient. Ce qui manque n'est plus la mécanique ni les chiffres,
-   c'est la décision. Deux réserves à écrire dans la documentation du mode :
-   l'amplitude dépend de la résolution — 11× à 256 px, 1,1× à 1024 px pour le même
-   logo, parce que la ligne devient économe quand la rastérisation est fine — et le
-   corpus est trop mince sur le *contenu*, six des treize cas étant écrits pour le
-   test.
-2. **Un test qui compare deux rasters à deux échelles.** Le comportement du traceur
-   dépend de l'échelle de rastérisation, pas seulement de la forme, et rien ne le
-   vérifie. Un même contenu rendu à 256 et 1024 devrait donner des proportions
-   prévisibles ; aujourd'hui il donne 6× *moins* de nœuds au quadruple de la
-   résolution, et le mécanisme n'est pas établi.
-3. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
-   20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
-4. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
-   sort de `prune` et donnerait à `ui/panel` le poids d'un cas réel et non d'un
-   seul exemple.
-5. Puis seulement : grain / tramage, et l'axe vidéo de D1.
