@@ -695,6 +695,49 @@ plafond de noeuds ne mord vraiment qu'entre `-tol 4` et `-tol 8`, la ou la
 courbe chute de 5,8 fois. C'est la que se joue D6, et c'est aussi la que la
 boucle de budget doit atteindre, donc la ou elle travaille le plus.
 
+### Le mecanisme de l'asymetrie : lineaire contre racine
+
+J'ai longtemps note que le mecanisme etait inconnu, et c'etait vrai pour la
+question posee — pourquoi la boucle de budget bridayait-elle si fort. La question
+utile a une reponse simple, et elle tient en geometrie elementaire. Le meme logo
+a quatre resolutions, rendu par inkscape avec `-w N -h N` sur le SVG d'origine,
+`k=16`, `-tol 0,25`, `-curve-tol 0,4`, `-curve-simplify 1,5`, aucun plafond :
+
+| echelle | lignes | courbes | x lignes | x courbes | ligne predite | courbe predite |
+|--:|--:|--:|--:|--:|--:|--:|
+| 256 | 21 833 | 966 | 1,00 | 1,00 | x1 | x1 |
+| 512 | 43 610 | 1 354 | 2,00 | 1,40 | x2 | x1,41 |
+| 1024 | 87 260 | 1 802 | 4,00 | 1,87 | x4 | x2,00 |
+| 2048 | 171 852 | 2 705 | 7,87 | 2,80 | x8 | x2,83 |
+
+Le chemin lignes est **lineaire** en resolution, au point pres : 1,00, 2,00, 4,00,
+7,87 contre 1, 2, 4, 8. Ce n'est pas un defaut, c'est ce qu'emettre une marche
+d'1 px veut dire. Le nombre de noeuds suit le perimetre divise par le pas de la
+marche, et les deux grandissent ensemble, donc le quotient est invariant
+d'echelle. Les points traces bruts le confirmaient deja : 23 925 a 256, 94 765 a
+1024, soit 3,96x pour 4x, exactement comme le perimetre.
+
+Le chemin courbe est en **racette** de la resolution, a moins de 5 % : 1,00, 1,40,
+1,87, 2,80 contre 1, 1,41, 2,00, 2,83. La, c'est de l'ajustement de courbe : un
+arc de rayon `R` ajuste a une tolerance `t` demande `n` segments de l'ordre de
+`racette(R / 8t)`, donc `racette(R)` a `t` fixe. L'exposant 0,5 est mesure, il
+n'est pas suppose.
+
+**Les deux lois ensemble disent pourquoi `-curves` vaut de plus en plus.** Le
+rapport vaut `R / racine(R)`, donc il croit comme `racette(R)` : 22,6x a 256,
+32,2x a 512, 48,4x a 1024, 63,5x a 2048, contre 22,6 x 1, 1,41, 2, 2,83 = 22,6,
+31,9, 45,2, 63,9 de prediction. Le mode n'est pas « meilleur », il est
+**asymptotique** : sur une image grande, une marche d'1 px coute des noeuds
+proportionnels au perimetre, et un segment de Bezier n'en coute que la racine.
+C'est la seule raison serieuse de le proposer.
+
+Et cela referme la question de ma premiere hypothese, qui etait fausse dans sa
+forme. Je proposais de faire suivre la resolution par `-curve-simplify` : le
+mauvais bouton, dans la mauvaise direction. Ce n'est pas la tolerance du mode
+courbe qui doit changer, c'est qu'a haute resolution le chemin lignes n'a
+mathematiquement pas d'issue et qu'il faut changer de mode. La resolution-echelle
+est une raison de choisir `-curves`, pas une correction a lui apporter.
+
 ### La boucle de budget ne gaspille rien
 
 A `-max-nodes 4000`, les treize cas du corpus n'utilisent que **24 656 des
@@ -796,13 +839,13 @@ le bon pour « à budget fixé, qui est le plus fidèle ».
    lignes et si le mode se documente par cette courbe ou par un seuil, et a quel
    seuil. Le corpus est toujours mince sur le contenu, six des treize cas etant
    ecrits pour le test.
-2. **Un test qui compare deux rasters a deux echelles.** Le comportement du
-   traceur depend de l'echelle de rasterisation, pas seulement de la forme, et
-   rien ne le verifie. Ce qui est etabli : le chemin lignes paie la resolution au
-   proportionnel, 4,0× de noeuds pour 4×, et le chemin courbe non, 1,87×. Ce qui
-   ne l'est pas : pourquoi. Les deux hypotheses testees sont refutees, la rampe
-   d'antialiasing et la tolerance proportionnelle. Un test qui figerait le
-   comportement non explique risquerait de figer un defaut.
+2. **Un test qui verifie les deux lois d'echelle.** Elles sont mesurees sur quatre
+   resolutions et elles portent la seule raison serieuse d'exposer `-curves` :
+   lignes lineaires en resolution, courbes en racine, donc un rapport en racine.
+   Rien ne les verifie aujourd'hui, et ce sont exactement le genre de propriete
+   silencieuse qu'une refonte casserait sans qu'on le voie. Le test doit
+   synthetiser ses rasters, pour ne dependre ni d'inkscape ni d'un fichier
+   d'image de plus dans le corpus.
 3. **Etendre le corpus** vers les 30 a 60 cas prevus, ce qui decide notamment du
    sort de `prune` et donnerait a `ui/panel` le poids d'un cas reel et non d'un
    seul exemple. C'est le seul point de la Suite qui demande du travail humain
