@@ -326,6 +326,8 @@ CORPUS_BG       ?= white
 # the traced staircase before any fitting happens: the two budgets apply in
 # sequence, so the shape a curve is fitted from is already the simplified one.
 CORPUS_CURVE_TOL ?= 0.4
+# How hard the curve path strips the tracing staircase before fitting.
+CORPUS_CURVE_SIMPLIFY ?= 1
 
 .PHONY: corpus-bench
 # The trace-bg row is trace with the source composited over the measurement's own
@@ -356,7 +358,7 @@ corpus-bench: $(GOBIN)/svgimg $(GOBIN)/svgstat ## Trace every corpus raster and 
 				enc=$$m; extra=''; \
 				[ "$$m" = trace ] && extra="-max-nodes $(CORPUS_MAX_NODES)"; \
 				if [ "$$m" = trace-bg ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -bg $(CORPUS_BG)"; fi; \
-				if [ "$$m" = trace-curves ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -curves -curve-tol $(CORPUS_CURVE_TOL)"; fi; \
+				if [ "$$m" = trace-curves ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -curves -curve-tol $(CORPUS_CURVE_TOL) -curve-simplify $(CORPUS_CURVE_SIMPLIFY)"; fi; \
 				$(GOBIN)/svgimg -in "$$png" -mode "$$enc" -k $(BASELINE_K) -tol $(CORPUS_TOL) \
 					$$extra -out "$$out" >/dev/null 2>&1 || continue; \
 				$(GOBIN)/svgstat "$$out" --ref "$$png" --oracle $(ORACLE) -bg $(CORPUS_BG) \

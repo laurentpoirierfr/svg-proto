@@ -76,6 +76,10 @@ type Options struct {
 	// CurveDepth bounds the subdivision of a run that CurveTolerance cannot
 	// satisfy. See curvefit.Options.
 	CurveDepth int
+
+	// CurveSimplifyTolerance is the simplification tolerance used on the curve
+	// path, in pixels, and it is deliberately not Tolerance. See traceBand.
+	CurveSimplifyTolerance float64
 }
 
 // withDefaults fills in the zero values that mean "unset".
@@ -88,6 +92,20 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MinArea < 0 {
 		o.MinArea = 0
+	}
+	// The curve options are defaulted here rather than left to the caller, and
+	// CurveSimplifyTolerance in particular must not be allowed to reach
+	// simplify.Loop as a zero: a zero tolerance is not a small tolerance but no
+	// tolerance at all, and Douglas-Peucker then returns every traced point, which
+	// is the one input the fitter cannot do anything useful with.
+	if o.CurveTolerance <= 0 {
+		o.CurveTolerance = curvefit.DefaultOptions().Tolerance
+	}
+	if o.CurveDepth <= 0 {
+		o.CurveDepth = curvefit.DefaultOptions().MaxDepth
+	}
+	if o.CurveSimplifyTolerance <= 0 {
+		o.CurveSimplifyTolerance = DefaultCurveSimplifyTolerance
 	}
 	return o
 }
@@ -390,9 +408,33 @@ const baseThreshold = sentinel / 2
 // traceBand traces, simplifies and serialises every loop of one band. It returns
 // the path data and the number of nodes it contains, which is zero when the band
 // is empty or everything in it was below MinArea.
+// DefaultCurveSimplifyTolerance is the simplification tolerance the curve path
+// uses. It is much larger than the line path's, and it is a different quantity
+// from the fitting tolerance: this one collapses the tracing staircase into a
+// polygon, the fitter then puts the curvature back.
+const DefaultCurveSimplifyTolerance = 1.0
+
+// traceBand traces one band and writes its path data.
+//
+// The curve path simplifies without the gradient weights, and that is the whole
+// reason it can work. simplify.Weights scales each point's error budget by
+// Reference/(Reference+gradient), which on a hard edge divides the tolerance by
+// roughly thirty, and the intent is to protect hard edges. But on a boundary that
+// is hard everywhere, such as a rasterised disc, the weights protect the tracing
+// staircase: measured on a 41x41 disc, the weighted path returns 100 points at
+// every tolerance from 0.05 to 3, so the knob does nothing at all and the fitter
+// is handed the staircase to fit curves to. Unweighted, the same disc collapses to
+// 12 points at a tolerance of 1 and the fitter returns 4 cubics.
+//
+// The weights stay on the line path, where they do what they were built for. It is
+// only when curves are going to carry the shape that the staircase has to come
+// off first, because a curve fitted through a staircase is not a curve.
 func traceBand(f, mag *field.Field, level, tol float64, opts Options) (d string, nodes int, loops int) {
 	traced := contour.Trace(f, contour.Options{Level: level, MinPoints: 4, JoinTolerance: 1e-9})
 	so := simplify.Options{Tolerance: tol, Reference: simplify.DefaultOptions().Reference, MinPoints: 4}
+	if opts.Curves {
+		so.Tolerance = opts.CurveSimplifyTolerance
+	}
 
 	var b []byte
 	n := 0
@@ -401,8 +443,13 @@ func traceBand(f, mag *field.Field, level, tol float64, opts Options) (d string,
 			continue
 		}
 		// The weights are per loop, since they are read at each of that loop's
-		// points. A field-wide table would be indexed by the wrong positions.
-		s := simplify.Loop(l, simplify.Weights(mag, l), so)
+		// points. A field-wide table would be indexed by the wrong positions. They
+		// are omitted entirely on the curve path; see traceBand.
+		var weights []float64
+		if !opts.Curves {
+			weights = simplify.Weights(mag, l)
+		}
+		s := simplify.Loop(l, weights, so)
 		if len(s) < 4 {
 			continue
 		}

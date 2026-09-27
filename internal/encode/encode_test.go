@@ -464,3 +464,53 @@ func TestACubicCostsThreeNodes(t *testing.T) {
 		t.Errorf("a cubic counts as %d nodes, want 3", cubic)
 	}
 }
+
+// The curve options used to reach simplify.Loop as whatever the caller passed,
+// which for a zero-value Options meant a zero simplification tolerance. Zero is
+// not a tight tolerance but no tolerance at all, so Douglas-Peucker returned the
+// tracing staircase unchanged and the fitter was asked to fit curves to it. The
+// result still looked like curves, so nothing failed loudly.
+func TestCurveOptionsAreDefaultedNotLeftAtZero(t *testing.T) {
+	o := Options{}.withDefaults()
+	if o.CurveSimplifyTolerance <= 0 {
+		t.Errorf("CurveSimplifyTolerance is %v; a zero would disable simplification entirely",
+			o.CurveSimplifyTolerance)
+	}
+	if o.CurveTolerance <= 0 {
+		t.Errorf("CurveTolerance is %v, want a positive default", o.CurveTolerance)
+	}
+	if o.CurveDepth <= 0 {
+		t.Errorf("CurveDepth is %v, want a positive default", o.CurveDepth)
+	}
+}
+
+// The end-to-end version of the same regression, through the public API. A
+// rasterised disc is the clearest witness: it is one smooth curve, and the line
+// path spends hundreds of points describing its staircase.
+func TestCurvesCollapseARasterisedDisc(t *testing.T) {
+	im, pal := disc(256, 256, 100, nil)
+
+	measure := func(o Options) (curves, nodes int) {
+		o.Tolerance = 0.25
+		o = o.withDefaults()
+		for _, d := range pathData(t, encodeOrFail(t, im, pal, o).Doc) {
+			curves += strings.Count(d, "C")
+		}
+		return curves, encodeOrFail(t, im, pal, o).Nodes
+	}
+
+	lineCurves, lineNodes := measure(Options{})
+	curveCurves, curveNodes := measure(Options{Curves: true, CurveSimplifyTolerance: 1})
+
+	if lineCurves != 0 {
+		t.Fatalf("the line path emitted %d cubics, want none", lineCurves)
+	}
+	if curveCurves < 4 {
+		t.Errorf("the disc fitted to %d cubics, want at least 4", curveCurves)
+	}
+	if curveNodes >= lineNodes {
+		t.Errorf("the curve path used %d nodes against the line path's %d, want fewer",
+			curveNodes, lineNodes)
+	}
+	t.Logf("disc: lines %d nodes, curves %d nodes in %d cubics", lineNodes, curveNodes, curveCurves)
+}
