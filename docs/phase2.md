@@ -613,6 +613,68 @@ Ce que cela dit du contenu tient toujours : `pixelart/blob` reste l'argument le
 plus fort en faveur des Béziers, `grid` le restituant exactement (ssim 1,0000)
 pendant que `trace` plafonne à 0,8392.
 
+### `-tol` n'est pas un curseur lisse
+
+Trois mesures qui invalident l'idée que `-tol` est un curseur de budget
+continu. Noeuds en sortie, chemin lignes, `k=16` :
+
+| `-tol` | mark 256 | panel | mark 1024 |
+|--:|--:|--:|--:|
+| 0,001 | 23 746 | 1 548 | 93 262 |
+| 0,01 | 21 423 | 1 544 | 82 654 |
+| 0,0625 | 17 783 | 1 481 | 54 964 |
+| 0,25 | **17 783** | 1 304 | **2 816** |
+| 1 | 17 783 | 995 | 3 033 |
+| 4 | 8 174 | 539 | 3 033 |
+| 16 | 947 | 522 | 2 044 |
+| 64 | 615 | 547 | 1 392 |
+| 256 | 499 | 671 | 1 163 |
+
+Trois choses. Un **plateau** : sur `mark` 256, 17 783 noeuds de 0,0625 a 1,
+seize fois la plage pour rien. Une **falaise** : sur `mark` 1024, 54 964 a
+2 816 entre 0,0625 et 0,25, vingt fois pour quatre fois la tolerance. Et des
+**inversions** : `panel` remonte de 522 a 671 entre 16 et 256, `mark` 1024 de
+2 816 a 3 033 entre 0,25 et 1. Ce dernier point n'est pas anodin :
+`budget = Tolerance * Reference / (Reference + gradient)` donne un budget
+d'erreur par point, et Douglas-Peucker ne conserve pas ses points entre deux
+tolerances, donc plus de tolerance peut garder plus de points.
+
+Consequence de methode : le point de reglage du corpus, `-tol 0,25`, n'est pas
+un point neutre. Il est **dans le plateau** de `mark` 256 et **juste apres la
+falaise** de `mark` 1024, dont le compte de noeuds changerait de vingt fois pour
+un quart de la tolerance. Les deux consequences sont opposees, et il faut les
+dire toutes les deux.
+
+### La boucle de budget ne fait presque rien, et c'est normal
+
+A `-max-nodes 4000`, sur les treize cas du corpus, la sortie n'utilise que
+**24 656 des 52 000 noeuds autorises, soit 47 %**, et aucun cas ne depasse :
+
+| cas | noeuds | usage | cas | noeuds | usage |
+|---|--:|--:|---|--:|--:|
+| alpha/badge | 706 | 18 % | synthetic/diag-stripes | 2 214 | 55 % |
+| icon/gear | 1 966 | 49 % | synthetic/diagonal-square | 3 263 | 82 % |
+| lineart/glyph | 1 077 | 27 % | synthetic/diagonal-stroke | 3 203 | 80 % |
+| logo/mark | 1 155 | 29 % | synthetic/tri-blade | 3 109 | 78 % |
+| logo/mark-scaled | 2 325 | 58 % | ui/panel | 1 304 | 33 % |
+| pixelart/blob | 56 | 1 % | synthetic/arrow | 1 475 | 37 % |
+| synthetic/chevron | 2 803 | 70 % | | | |
+
+J'ai lu ca comme du gaspillage et ecrit une variante de la boucle qui encadre
+le budget puis bissectionne, pour depenser le budget disponible. **Elle ne
+change rien**, et la raison est dans le tableau : hors `logo/mark`, le premier
+essai a `-tol 0,25` est deja sous le budget, donc la boucle n'est jamais
+atteinte, et sur `mark` le plateau lui laisse rien a gagner. Le changement a ete
+reverté.
+
+La lecture juste etait l'inverse. D6 est un **plafond**, pas une cible, et le
+travail de l'encodeur est de minimiser la taille sous les contraintes. Ne pas
+utiliser tout le budget n'est pas un defaut, c'est le but : chaque noeud non
+employe est un noeud qui ne coute rien en octets. Ce que le tableau dit
+vraiment, c'est qu'a `-tol 0,25` la fidelite est deja bonne et la taille
+minimale, et que `-max-nodes` n'a aucun mordant sur ce corpus, sauf sur
+`logo/mark`, le seul cas a depasser 20 000 points.
+
 ## Suite
 
 1. **Trancher `-curves`.** La frontière est mesurée (§ « la frontière »), le gain
