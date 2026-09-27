@@ -24,11 +24,10 @@ type Options struct {
 	// 120 while leaving a gently curving edge alone.
 	CornerAngle float64
 
-	// QuietAngle is the turn, in degrees, above which a neighbour counts as
-	// another feature rather than as straight ground. Half of CornerAngle, so
-	// that a staircase, whose turns arrive in a spread of similar sizes, marks off
-	// its own corners, while a clean shape whose only turns are its corners does
-	// not.
+	// QuietAngle is the turn, in degrees, above which a neighbour stops counting
+	// as straight ground. Half of CornerAngle. What matters is not the size of a
+	// neighbour's turn on its own but whether it continues the same sense of turn
+	// as the one before it, so this threshold is read together with the signs.
 	QuietAngle float64
 
 	// MinCornerGap is how much contour, in pixels, must lie on each side of a
@@ -115,45 +114,79 @@ func Corners(l contour.Loop, o Options) []int {
 		if math.IsNaN(turns[i]) || turns[i] < o.CornerAngle {
 			continue
 		}
-		if gapBeforeFeature(turns, arc, total, i, +1, o) && gapBeforeFeature(turns, arc, total, i, -1, o) {
+		quietPlus, clearPlus := gapBeforeFeature(turns, arc, total, i, +1, o)
+		quietMinus, clearMinus := gapBeforeFeature(turns, arc, total, i, -1, o)
+		// A corner is a change of state, so it needs a straight run on at least
+		// one side: that is what it changes to. The other side may be straight too,
+		// or it may be a staircase, whose steps alternate and so never sustain a
+		// turn. It may not be curvature, which sustains its turn, and that is the
+		// one case that looks like a corner and is not: a rasterised disc has 40
+		// of them, every one with a straight-ish run a couple of pixels away, and
+		// every one of them the fitter would refuse to round.
+		if (quietPlus || quietMinus) && clearPlus && clearMinus {
 			corners = append(corners, i)
 		}
 	}
 	return corners
 }
 
-// gapBeforeFeature walks from vertex i in direction dir and reports whether it
-// reaches MinCornerGap of contour before meeting another feature.
+// gapBeforeFeature walks from vertex i in direction dir and reports two things
+// about the MinCornerGap of contour that follows.
+//
+// quiet says the stretch is straight ground: no turn of QuietAngle or more in it.
+// clear says the stretch holds no sustained turn: a turn that keeps going the same
+// way, or changes size while keeping its sense, is curvature or a corner, and
+// either way it is not a staircase. Alternating senses are a staircase, and a
+// staircase is clear.
 //
 // The distance to the next vertex is checked before that vertex's turn, and the
 // order matters. A rectangle that simplify has reduced to four points has four
 // adjacent corners, so testing the neighbour's angle first rejects all of them; but
 // its edges are twenty to thirty pixels long, so the neighbour is already outside
-// the gap and there was never any reason to ask what it turns at. A staircase is
-// the mirror image: its steps are under a pixel, so the neighbour is well inside
-// the gap, and asking there is exactly the question that answers it.
+// the gap and there was never any reason to ask what it turns at.
 //
 // Arc length is measured on the loop, not counted in vertices, because vertices
 // are not comparable across shapes: a staircase and a rectangle can both arrive
 // with four of them, and only their spacing separates a corner from a tracing
 // artefact. A NaN turn comes from a repeated point and is skipped rather than
 // treated as a feature, so a duplicate cannot disqualify the corner beside it.
-func gapBeforeFeature(turns, arc []float64, total float64, i, dir int, o Options) bool {
+func gapBeforeFeature(turns, arc []float64, total float64, i, dir int, o Options) (quiet, clear bool) {
 	n := len(turns)
+	quiet, clear = true, true
+	var last float64
+	seen := false
 	for step := 1; step < n; step++ {
 		at := (i + dir*step + n) % n
 		if arcBetween(arc, total, i, at, dir) >= o.MinCornerGap {
-			return true
+			return quiet, clear
 		}
-		if !quiet(turns[at], o) {
-			return false
+		t := turns[at]
+		if math.IsNaN(t) || math.Abs(t) < o.QuietAngle {
+			// Straight ground, and it breaks any run: whatever came before this
+			// stretch is no longer sustaining into it.
+			seen = false
+			continue
 		}
+		if seen && sameSense(t, last) {
+			// The turn carries on in the same direction, so this is curvature, or
+			// a staircase that all the way along was heading the same way, which
+			// is not a staircase.
+			quiet, clear = false, false
+			return quiet, clear
+		}
+		seen, last = true, t
+		quiet = false
 	}
-	return false
+	return quiet, clear
 }
 
-func quiet(turn float64, o Options) bool {
-	return math.IsNaN(turn) || turn < o.QuietAngle
+// sameSense reports whether two turns bend the boundary the same way, allowing for
+// a staircase's steps not being exactly equal.
+func sameSense(a, b float64) bool {
+	if a*b < 0 {
+		return false
+	}
+	return math.Abs(a) >= 0.5*math.Abs(b) || math.Abs(b) >= 0.5*math.Abs(a)
 }
 
 // arcBetween is the contour length from vertex i to vertex at in direction dir.
@@ -193,6 +226,16 @@ func arcLengths(l contour.Loop) ([]float64, float64) {
 // reversal. A repeated point yields NaN, which reads as no turn and so never as a
 // corner, which is right: marching squares can emit a repeated point and a
 // repeated point is not a shape.
+// turnAngles is the signed rotation at each vertex, positive and negative being
+// opposite senses of turn.
+//
+// The sign is not a refinement, it is the whole point, and dropping it is what made
+// this rule unable to see a staircase for what it is. A staircase's steps rotate
+// -90, +90, -90, +90: each step is undone by the next, and the boundary advances
+// diagonally while the absolute angle at every vertex reads 90. So does a genuine
+// corner. Magnitude alone cannot tell them apart, and an earlier version of this
+// file used it, which is why corners at the end of a staircase went missing while
+// every step of the staircase looked like one.
 func turnAngles(l contour.Loop) []float64 {
 	n := len(l)
 	turns := make([]float64, n)
@@ -204,8 +247,7 @@ func turnAngles(l contour.Loop) []float64 {
 			turns[i] = math.NaN()
 			continue
 		}
-		c := (in.X*out.X + in.Y*out.Y) / (a * b)
-		turns[i] = math.Acos(math.Max(-1, math.Min(1, c))) * 180 / math.Pi
+		turns[i] = math.Atan2(in.X*out.Y-in.Y*out.X, in.X*out.X+in.Y*out.Y) * 180 / math.Pi
 	}
 	return turns
 }

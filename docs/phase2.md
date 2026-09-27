@@ -437,27 +437,56 @@ l'absence de tolérance : Douglas-Peucker renvoyait alors tous les points tracé
 le fitter recevait l'escalier complet. Rien n'échouait bruyamment, la sortie
 ressemblait à des courbes. C'est maintenant couvert par un test de régression.
 
-Une troisième pièce : `internal/polygon`, qui isole les coins par la longueur de
-contour qui les sépare plutôt que par leur angle seul. Un seuil d'angle ne peut pas
-faire les deux à la fois — il rejette la marche, ou il accepte le bruit. Limite
-connue et assumée : là où une marche rejoint un côté droit, le coin n'est pas trouvé,
-car la marche voisine tourne de 45° sur un pixel et se trouve donc à moins de 2 px.
-Rendre ce seuil `QuietAngle` plus permissif répare ce cas et en casse d'autres ; le
-discriminant qu'il faut est plus fin qu'un angle unique.
+Un point est resté hors de portée pendant plusieurs mesures, et il a fini par se
+révéler être la faute de la mesure elle-même. Là où une marche rejoint un côté
+droit, le coin n'était pas trouvé : la marche voisine tourne de 45° sur un pixel
+et se trouve donc à moins de 2 px, ce qui suffisait à écarter le coin. Rendre
+`QuietAngle` plus permissif réparait ce cas et en cassait d'autres, et c'est ce
+qui a fait longtemps prendre le problème pour un choix de seuil.
+
+La cause était que `turnAngles` renvoyait l'angle **non signé**. Une marche est un
+zigzag : ses pas tournent −90, +90, −90, +90, chacun annulé par le suivant, pendant
+que l'angle absolu à chaque sommet affiche 90 — exactement ce qu'affiche un vrai
+coin. En magnitude seule, une marche est indiscernable d'une rangée d'angles
+droits. Lire le signe sépare les trois cas :
+
+- le coin en bout de marche a un **côté droit** d'un côté et un run alterné de
+  l'autre ;
+- un pas au milieu de la marche a des runs alternés des deux côtés et aucun côté
+  droit, donc il n'a rien à quoi changer ;
+- un sommet du disque n'a de côté droit d'aucun côté.
+
+La règle est donc qu'un coin est un changement d'état : il lui faut un run
+rectiligne d'au moins un côté, et de l'autre côté du droit ou un zigzag, mais
+jamais une courbure soutenue. C'est ce dernier cas qui ressemblait à un coin sans
+en être un.
+
+Coût mesuré : la règle est plus stricte, donc elle trouve moins de coins, et le
+corpus se dégrade très légèrement (`icon/gear` 0,1197 → 0,1212, `logo/mark` 0,1672
+→ 0,1746, `pixelart/blob` et `alpha/badge` inchangés ou améliorés). La géométrie
+est juste ; le corpus, qui exerce peu de diagonales, n'en profite pas. Les nœuds
+sont neutres. C'est le compromis attendu d'une correction de justesse.
 
 #### Ce que ça donne, mesuré
 
 Corpus, `-max-nodes 4000`, `-curve-tol 0.4`, `-curve-simplify 1` :
 
-| cas | octets `trace` | octets `-curves` | ratio | score `trace` | score `-curves` |
-|---|--:|--:|--:|--:|--:|
-| `icon/gear` | 79 411 | 7 658 | 10,4× | 0,1036 | 0,1197 |
-| `logo/mark` | 234 590 | 19 115 | 12,3× | 0,1466 | 0,1672 |
-| `lineart/glyph` | 14 658 | 1 989 | 7,4× | 0,1390 | **0,1389** |
-| `ui/panel` | 17 967 | 6 964 | 2,6× | 0,1490 | 0,1698 |
-| `alpha/badge` | 2 314 | 737 | 3,1× | 0,3059 | 0,3112 |
-| `pixelart/blob` | 949 | 606 | 1,6× | 0,2492 | 0,2560 |
-| `logo/mark-scaled` | 40 098 | 43 504 | 0,9× | 0,0812 | 0,0887 |
+Les colonnes ci-dessous sont générées depuis `docs/corpus-bench.md` plutôt que
+saisies, la main s'étant déjà trompée une fois entre octets bruts et octets gzip.
+
+| cas | octets `trace` | octets `-curves` | ratio | nœuds `trace` | nœuds `-curves` | score `trace` | score `-curves` |
+|---|--:|--:|--:|--:|--:|--:|--:|
+| `logo/mark` | 234 590 | 19 089 | 12,3× | 17 827 | 2 299 | 0,1466 | 0,1746 |
+| `icon/gear` | 79 411 | 7 663 | 10,4× | 6 426 | 954 | 0,1036 | 0,1212 |
+| `lineart/glyph` | 14 658 | 2 040 | 7,2× | 1 089 | 174 | 0,1390 | **0,1389** |
+| `alpha/badge` | 8 935 | 1 827 | 4,9× | 714 | 222 | 0,3059 | **0,3051** |
+| `ui/panel` | 17 967 | 6 999 | 2,6× | 1 365 | 655 | 0,1490 | 0,1697 |
+| `pixelart/blob` | 949 | 606 | 1,6× | 58 | 27 | 0,2492 | 0,2560 |
+| `logo/mark-scaled` | 40 098 | 42 961 | 0,9× | 2 897 | 4 775 | 0,0812 | 0,0905 |
+
+Les nœuds sont la contrainte dure de D6, pas les octets : ils ne se compriment pas.
+Sur ce critère, `-curves` gagne sur six cas sur sept, jusqu'à 12×, et
+`logo/mark-scaled` est le seul où il en perd.
 
 Sur les deux photos de `assets/png`, en `-k 8` :
 
@@ -467,9 +496,9 @@ Sur les deux photos de `assets/png`, en `-k 8` :
 | `tux.png` | 680 581 | 183 450 | 3,7× | 0,7086 | 0,6968 |
 
 Donc le tableau s'est inversé : ce n'est plus une régression partout, c'est un
-**échange** — jusqu'à 12× plus petit contre +0,005 à +0,021 de score, pour 0 à
-−0,012 de ssim. `lineart/glyph` s'améliore même légèrement. `logo/mark-scaled` est
-le seul cas qui grossit, de 8 %.
+**échange** — jusqu'à 12× moins de nœuds contre +0,005 à +0,028 de score, pour 0
+à −0,012 de ssim. `lineart/glyph` et `alpha/badge` s'améliorent même légèrement.
+`logo/mark-scaled` est le seul cas qui grossit, de 7 %.
 
 `-curves` reste **désactivé par défaut** : c'est un arbitrage, pas un gain franc, et
 un mode qui dégrade la fidélité en silence n'a pas sa place dans un défaut. Il se
@@ -483,15 +512,12 @@ pendant que `trace` plafonne à 0,8392.
 ## Suite
 
 1. **Trancher `-curves`.** Le chemin est maintenant un échange mesuré, 2,6× à 12×
-   plus petit contre ~0,02 de score. Ce qui manque n'est plus la mécanique mais la
-   décision : est-ce un mode qu'on expose, et à quelles conditions ? La question
+   moins de nœuds contre ~0,02 de score. Ce qui manque n'est plus la mécanique mais
+   la décision : est-ce un mode qu'on expose, et à quelles conditions ? La question
    se tranche sur le contenu, donc sur un corpus plus large qu'à présent.
-2. **Le coin en bout de marche diagonale.** `internal/polygon` le manque encore.
-   Il faut regarder la série de virages et non un angle isolé, ce qui est une autre
-   fonction qu'un seuil.
-3. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
+2. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
    20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
-4. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
+3. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
    sort de `prune` et donnerait à `ui/panel` le poids d'un cas réel et non d'un
    seul exemple.
-5. Puis seulement : grain / tramage, et l'axe vidéo de D1.
+4. Puis seulement : grain / tramage, et l'axe vidéo de D1.
