@@ -488,6 +488,91 @@ Les nœuds sont la contrainte dure de D6, pas les octets : ils ne se compriment 
 Sur ce critère, `-curves` gagne sur six cas sur sept, jusqu'à 12×, et
 `logo/mark-scaled` est le seul où il en perd.
 
+#### Six cas diagonaux, et ce qu'ils disent du correctif de signe
+
+Le corpus n'a presque pas de diagonales, et c'est exactement la géométrie que le
+correctif de signe visait. Six cas écrits pour ça sont donc ajoutés dans
+`testdata/corpus/synthetic/`, catégorie nommée pour ce qu'elle est : du contenu
+écrit pour le test, pas du contenu tiers. Ils sont rendus par l'oracle comme les
+autres.
+
+| cas | octets `trace` | octets `-curves` | nœuds `trace` | nœuds `-curves` | score `+` |
+|---|--:|--:|--:|--:|--:|
+| `diagonal-stroke` | 132 090 | 2 891 (46×) | 9 916 | 209 (47×) | +0,0195 |
+| `diagonal-square` | 123 666 | 2 915 (42×) | 9 278 | 198 (47×) | **−0,0002** |
+| `chevron` | 37 457 | 929 (40×) | 2 809 | 54 (52×) | +0,0154 |
+| `tri-blade` | 130 341 | 3 918 (33×) | 9 664 | 276 (35×) | +0,0066 |
+| `arrow` | 20 192 | 759 (27×) | 1 480 | 38 (39×) | **−0,0001** |
+| `diag-stripes` | 29 430 | 1 226 (24×) | 2 226 | 108 (21×) | +0,0093 |
+
+Là, l'écart est d'un tout autre ordre que sur le reste du corpus : 24× à 46×,
+et le score ne bouge pas sur deux cas. Les formes à coins francs et bords
+diagonaux sont précisément celles que la ligne gaspille le plus.
+
+**Et le correctif de signe n'y change rien.** A/B sur ces six cas, nœuds et score
+identiques au chiffre près avec la règle non signée. C'est un résultat qu'il
+fallait mesurer plutôt que supposer, et il infirme ce que j'écrivais au commit
+précédent.
+
+La raison est simple une fois vue : la classification de coins ne départage la
+marche d'escalier que si la marche est encore là. Or la simplification non pondérée
+la supprime en amont, et ce que le fitter reçoit est déjà un polygone grossier —
+198 points pour un carré de 256 px. Il n'y a plus de marches à confondre avec des
+coins. Le correctif est juste, son test le prouve sur une boucle construite pour
+ça, mais le pipeline ne lui présente jamais les conditions qui le rendaient
+nécessaire. Sa légère dégradation sur l'ancien corpus est donc une perte sèche.
+
+#### La frontière, et ce que `-curves` coûte vraiment
+
+Une seule mesure ne permet pas de trancher : `-curve-simplify` et `-curve-tol` sont
+deux réglages et le corpus n'en montrait qu'un point. Balayé sur les treize cas au
+point de réglage du corpus (`k=16`, `-tol 0.25`, `-max-nodes 20000`), `curve-tol`
+fixé à 0,4 :
+
+| `-curve-simplify` | nœuds (13 cas) | ratio | Δscore moyen | Δssim moyen | pire Δssim |
+|---|--:|--:|--:|--:|--:|
+| 0,75 | 18 378 | 3,6× | +0,0121 | −0,0092 | −0,0319 |
+| 1 | 9 989 | 6,6× | +0,0102 | −0,0074 | −0,0274 |
+| **1,5** | **6 435** | **10,2×** | **+0,0103** | **−0,0083** | **−0,0263** |
+| 2 | 5 746 | 11,4× | +0,0162 | −0,0127 | −0,0556 |
+| 3 | 5 145 | 12,8× | +0,0196 | −0,0146 | −0,0569 |
+
+**1 est dominé par 1,5** : même coût de fidélité, 10,2× au lieu de 6,6×. Le défaut
+passe donc de 1 à 1,5. En dessous, le score monte plus vite que les nœuds ne
+baissent ; au-dessus, plus vite encore.
+
+Il n'existe **aucun réglage gratuit**. 4 cas sur 13 ne perdent rien à un réglage
+quelconque, les 9 autres paient. À 1,5, en nœuds :
+
+| cas | `trace` | `-curves` | ratio | Δscore | Δssim |
+|---|--:|--:|--:|--:|--:|
+| `synthetic/diagonal-stroke` | 9 916 | 145 | **68,4×** | +0,0177 | −0,0092 |
+| `synthetic/diagonal-square` | 9 278 | 165 | **56,2×** | +0,0041 | −0,0014 |
+| `synthetic/tri-blade` | 9 664 | 187 | **51,7×** | +0,0076 | −0,0025 |
+| `synthetic/chevron` | 2 809 | 64 | 43,9× | +0,0268 | −0,0174 |
+| `synthetic/arrow` | 1 480 | 38 | 38,9× | **−0,0001** | +0,0010 |
+| `synthetic/diag-stripes` | 2 226 | 108 | 20,6× | +0,0093 | −0,0043 |
+| `icon/gear` | 6 426 | 571 | 11,3× | +0,0174 | −0,0263 |
+| `logo/mark` | 17 827 | 1 614 | 11,0× | +0,0287 | −0,0217 |
+| `lineart/glyph` | 1 089 | 168 | 6,5× | +0,0009 | −0,0017 |
+| `alpha/badge` | 714 | 141 | 5,1× | +0,0019 | −0,0098 |
+| `ui/panel` | 1 365 | 573 | 2,4× | +0,0058 | −0,0021 |
+| `pixelart/blob` | 58 | 27 | 2,1× | +0,0068 | −0,0113 |
+| `logo/mark-scaled` | 2 897 | 2 634 | **1,1×** | +0,0071 | −0,0006 |
+
+**Le cas qui ne profite pas est à 1024 px.** `logo/mark-scaled` est le même logo que
+`logo/mark`, rendu quatre fois plus grand, et le gain y tombe de 11× à 1,1×. Ce
+n'est pas un défaut de la règle : `-curve-simplify` est en pixels, donc à quatre
+fois la résolution il retire quatre fois moins de détail *relatif*. La tolérance
+devrait suivre la résolution et non la fixer. C'est le prochain chantier, et il est
+plus utile que le choix de la constante.
+
+Compte tenu de D6, la lecture d'ensemble est favorable : la contrainte dure est le
+nombre de nœuds parce qu'elle ne se comprime pas, et sur cette contrainte le gain
+va de 1× à 68× pour environ 0,01 de RMSE OKLab. `-curves` reste **désactivé par
+défaut** tant que la décision n'est pas prise explicitement, mais ce n'est plus
+« ne pas activer » par prudence, c'est « activer ou non, sur des chiffres ».
+
 Sur les deux photos de `assets/png`, en `-k 8` :
 
 | image | octets `trace` | octets `-curbes` | ratio | ssim `trace` | ssim `-curves` |
@@ -511,13 +596,19 @@ pendant que `trace` plafonne à 0,8392.
 
 ## Suite
 
-1. **Trancher `-curves`.** Le chemin est maintenant un échange mesuré, 2,6× à 12×
-   moins de nœuds contre ~0,02 de score. Ce qui manque n'est plus la mécanique mais
-   la décision : est-ce un mode qu'on expose, et à quelles conditions ? La question
-   se tranche sur le contenu, donc sur un corpus plus large qu'à présent.
-2. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
+1. **Une tolérance qui suit la résolution.** `-curve-simplify` est en pixels, donc
+   le gain s'effondre à haute résolution : 11× à 256 px, 1,1× à 1024 px pour le
+   même logo. C'est le défaut le plus visible de la chose, et il se corrige en une
+   règle. Vient avant toute décision d'exposer `-curves`, parce qu'elle en change
+   le résultat.
+2. **Trancher `-curves`.** La frontière est mesurée (§ « la frontière »), le gain
+   va de 1× à 68× en nœuds pour ~0,01 de RMSE, et aucun réglage n'est gratuit :
+   9 cas sur 13 paient. Ce qui manque n'est plus la mécanique ni les chiffres,
+   c'est la décision — et le corpus est encore trop mince sur le *contenu*, six
+   des treize cas étant écrits pour le test.
+3. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
    20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
-3. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
+4. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
    sort de `prune` et donnerait à `ui/panel` le poids d'un cas réel et non d'un
    seul exemple.
-4. Puis seulement : grain / tramage, et l'axe vidéo de D1.
+5. Puis seulement : grain / tramage, et l'axe vidéo de D1.

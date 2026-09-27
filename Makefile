@@ -214,7 +214,7 @@ corpus-render: ## Render every testdata/corpus/*.svg to its matching .png via th
 # The corpus is laid out as testdata/corpus/<category>/*.{svg,png}, where the
 # matching raster shares the base name. The category is the directory name, so
 # aggregating by category needs no manifest.
-CORPUS_CATS := logo icon ui screenshot lineart pixelart photo alpha anim
+CORPUS_CATS := logo icon ui screenshot lineart pixelart photo alpha anim synthetic
 
 .PHONY: corpus
 corpus: $(GOBIN)/svgstat ## Report corpus coverage by category
@@ -327,7 +327,7 @@ CORPUS_BG       ?= white
 # sequence, so the shape a curve is fitted from is already the simplified one.
 CORPUS_CURVE_TOL ?= 0.4
 # How hard the curve path strips the tracing staircase before fitting.
-CORPUS_CURVE_SIMPLIFY ?= 1
+CORPUS_CURVE_SIMPLIFY ?= 1.5
 
 .PHONY: corpus-bench
 # The trace-bg row is trace with the source composited over the measurement's own

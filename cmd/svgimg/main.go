@@ -57,7 +57,7 @@ func main() {
 		bg        = flag.String("bg", "", "composite the source over this sRGB colour before vectorising (e.g. white, #f0f0f0); empty keeps the source alpha")
 		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase")
 		curveTol  = flag.Float64("curve-tol", 0.5, "for trace: largest distance in px between a fitted curve and the points it was fitted from")
-		curveSimp = flag.Float64("curve-simplify", 0, "for trace -curves: simplification tolerance in px that strips the tracing staircase before fitting (default 1)")
+		curveSimp = flag.Float64("curve-simplify", 0, "for trace -curves: simplification tolerance in px that strips the tracing staircase before fitting (default 1.5)")
 	)
 	flag.Parse()
 
