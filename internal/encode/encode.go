@@ -22,6 +22,7 @@ import (
 
 	"github.com/elfeo/svg-proto/internal/colorconv"
 	"github.com/elfeo/svg-proto/internal/contour"
+	"github.com/elfeo/svg-proto/internal/curvefit"
 	"github.com/elfeo/svg-proto/internal/dom"
 	"github.com/elfeo/svg-proto/internal/field"
 	"github.com/elfeo/svg-proto/internal/pixelbuf"
@@ -62,6 +63,23 @@ type Options struct {
 	// MinArea is the smallest region, in square pixels, worth emitting. Slivers
 	// below it are dropped: each costs a path node and is invisible.
 	MinArea float64
+
+	// Curves replaces the traced staircase with fitted Bezier segments. It is off
+	// by default, so the tracer's output is unchanged until a caller asks for it
+	// and the default can be compared against the fitted one.
+	Curves bool
+
+	// CurveTolerance is the largest distance, in pixels, that a fitted curve may
+	// sit from the points it was fitted from. See curvefit.Options.
+	CurveTolerance float64
+
+	// CurveDepth bounds the subdivision of a run that CurveTolerance cannot
+	// satisfy. See curvefit.Options.
+	CurveDepth int
+
+	// CurveSimplifyTolerance is the simplification tolerance used on the curve
+	// path, in pixels, and it is deliberately not Tolerance. See traceBand.
+	CurveSimplifyTolerance float64
 }
 
 // withDefaults fills in the zero values that mean "unset".
@@ -74,6 +92,20 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MinArea < 0 {
 		o.MinArea = 0
+	}
+	// The curve options are defaulted here rather than left to the caller, and
+	// CurveSimplifyTolerance in particular must not be allowed to reach
+	// simplify.Loop as a zero: a zero tolerance is not a small tolerance but no
+	// tolerance at all, and Douglas-Peucker then returns every traced point, which
+	// is the one input the fitter cannot do anything useful with.
+	if o.CurveTolerance <= 0 {
+		o.CurveTolerance = curvefit.DefaultOptions().Tolerance
+	}
+	if o.CurveDepth <= 0 {
+		o.CurveDepth = curvefit.DefaultOptions().MaxDepth
+	}
+	if o.CurveSimplifyTolerance <= 0 {
+		o.CurveSimplifyTolerance = DefaultCurveSimplifyTolerance
 	}
 	return o
 }
@@ -376,9 +408,33 @@ const baseThreshold = sentinel / 2
 // traceBand traces, simplifies and serialises every loop of one band. It returns
 // the path data and the number of nodes it contains, which is zero when the band
 // is empty or everything in it was below MinArea.
+// DefaultCurveSimplifyTolerance is the simplification tolerance the curve path
+// uses. It is much larger than the line path's, and it is a different quantity
+// from the fitting tolerance: this one collapses the tracing staircase into a
+// polygon, the fitter then puts the curvature back.
+const DefaultCurveSimplifyTolerance = 1.0
+
+// traceBand traces one band and writes its path data.
+//
+// The curve path simplifies without the gradient weights, and that is the whole
+// reason it can work. simplify.Weights scales each point's error budget by
+// Reference/(Reference+gradient), which on a hard edge divides the tolerance by
+// roughly thirty, and the intent is to protect hard edges. But on a boundary that
+// is hard everywhere, such as a rasterised disc, the weights protect the tracing
+// staircase: measured on a 41x41 disc, the weighted path returns 100 points at
+// every tolerance from 0.05 to 3, so the knob does nothing at all and the fitter
+// is handed the staircase to fit curves to. Unweighted, the same disc collapses to
+// 12 points at a tolerance of 1 and the fitter returns 4 cubics.
+//
+// The weights stay on the line path, where they do what they were built for. It is
+// only when curves are going to carry the shape that the staircase has to come
+// off first, because a curve fitted through a staircase is not a curve.
 func traceBand(f, mag *field.Field, level, tol float64, opts Options) (d string, nodes int, loops int) {
 	traced := contour.Trace(f, contour.Options{Level: level, MinPoints: 4, JoinTolerance: 1e-9})
 	so := simplify.Options{Tolerance: tol, Reference: simplify.DefaultOptions().Reference, MinPoints: 4}
+	if opts.Curves {
+		so.Tolerance = opts.CurveSimplifyTolerance
+	}
 
 	var b []byte
 	n := 0
@@ -387,18 +443,56 @@ func traceBand(f, mag *field.Field, level, tol float64, opts Options) (d string,
 			continue
 		}
 		// The weights are per loop, since they are read at each of that loop's
-		// points. A field-wide table would be indexed by the wrong positions.
-		s := simplify.Loop(l, simplify.Weights(mag, l), so)
+		// points. A field-wide table would be indexed by the wrong positions. They
+		// are omitted entirely on the curve path; see traceBand.
+		var weights []float64
+		if !opts.Curves {
+			weights = simplify.Weights(mag, l)
+		}
+		s := simplify.Loop(l, weights, so)
 		if len(s) < 4 {
 			continue
 		}
 		if len(b) > 0 {
 			b = append(b, ' ')
 		}
-		b = appendSubpath(b, s, opts.Precision)
-		n += len(s) - 1 // the repeated closing point is not a node
+		if opts.Curves {
+			p := curvefit.Fit(s, curvefit.Options{
+				Tolerance: opts.CurveTolerance,
+				MaxDepth:  opts.CurveDepth,
+			})
+			if len(p.Segs) == 0 {
+				// Nothing fitted, so nothing to draw. Emitting a bare "M Z" would be
+				// a shape with no extent, and counting its points would charge the
+				// node budget for a path that draws nothing.
+				b = b[:len(b)-1]
+				continue
+			}
+			b = appendFittedSubpath(b, p, opts.Precision)
+			n += fittedNodes(p)
+		} else {
+			b = appendSubpath(b, s, opts.Precision)
+			n += len(s) - 1 // the repeated closing point is not a node
+		}
 	}
 	return string(b), n, len(traced)
+}
+
+// fittedNodes counts a fitted path's nodes. A straight segment contributes one
+// point, but a cubic contributes three, because that is what it actually puts in
+// the file. Counting a curve as one node would let the fitter claim a budget win
+// it did not take, and the node ceiling from decision D6 would stop meaning
+// anything the moment curves are switched on.
+func fittedNodes(p curvefit.Path) int {
+	n := 0
+	for _, s := range p.Segs {
+		if s.Kind == curvefit.Cubic {
+			n += 3
+		} else {
+			n++
+		}
+	}
+	return n
 }
 
 // appendSubpath writes one closed contour as M p0 L p1 ... L pn Z, dropping the
@@ -415,6 +509,35 @@ func appendSubpath(b []byte, l contour.Loop, prec int) []byte {
 		b = appendNum(b, l[i].Y, prec)
 	}
 	return append(b, 'Z')
+}
+
+// appendFittedSubpath writes one fitted path as a closed subpath: M for the
+// first point, then L or C per segment, then Z. The repeated closing point that
+// contour.Loop carries is not a shape here, because Path is closed by
+// construction: the last segment already ends where the first one began, and
+// repeating it would open a seam for no reason.
+func appendFittedSubpath(b []byte, p curvefit.Path, prec int) []byte {
+	b = append(b, 'M')
+	b = appendPt(b, p.Segs[0].P0, prec)
+	for _, s := range p.Segs {
+		if s.Kind == curvefit.Cubic {
+			b = append(b, 'C')
+			b = appendPt(b, s.C1, prec)
+			b = appendPt(b, s.C2, prec)
+			b = appendPt(b, s.P3, prec)
+			continue
+		}
+		b = append(b, 'L')
+		b = appendPt(b, s.P3, prec)
+	}
+	return append(b, 'Z')
+}
+
+func appendPt(b []byte, p contour.Pt, prec int) []byte {
+	b = appendNum(b, p.X, prec)
+	b = append(b, ' ')
+	b = appendNum(b, p.Y, prec)
+	return append(b, ' ')
 }
 
 func appendNum(b []byte, v float64, prec int) []byte {

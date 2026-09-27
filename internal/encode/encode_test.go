@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/elfeo/svg-proto/internal/curvefit"
 	"github.com/elfeo/svg-proto/internal/dom"
 	"github.com/elfeo/svg-proto/internal/pixelbuf"
 	"github.com/elfeo/svg-proto/internal/quant"
@@ -389,4 +390,127 @@ func TestAlphaLevelSnapping(t *testing.T) {
 	if got := alphaLevel(0.3, 0); got != 1 {
 		t.Errorf("alphaLevel(0.3, 0) = %v, want 1", got)
 	}
+}
+
+// disc builds a hard-edged disc, the shape curve fitting is supposed to exist
+// for. A rasterised circle traced by marching squares is a staircase, which makes
+// it the honest test: a fitter that only looks good on synthetic geometry would
+// not survive it.
+func disc(w, h, r int, f func(x, y int) color.RGBA) (*pixelbuf.Image, *quant.Palette) {
+	return solid(w, h, func(x, y int) color.RGBA {
+		dx, dy := float64(x)-float64(w)/2, float64(y)-float64(h)/2
+		if dx*dx+dy*dy <= float64(r*r) {
+			return color.RGBA{20, 20, 20, 255}
+		}
+		return color.RGBA{245, 245, 245, 255}
+	})
+}
+
+// Curves must be opt-in. The default is the traced staircase, and a feature that
+// cannot be compared against the thing it replaces is not a feature.
+func TestCurvesAreOffByDefault(t *testing.T) {
+	im, pal := disc(120, 120, 44, nil)
+	for _, d := range pathData(t, encodeOrFail(t, im, pal, Options{}).Doc) {
+		if strings.Contains(d, "C") {
+			t.Errorf("default output contains a curve command: %s", d)
+		}
+	}
+}
+
+// With the option on, the same shape must actually be emitted as curves.
+func TestCurvesEmitBezierCommands(t *testing.T) {
+	im, pal := disc(120, 120, 44, nil)
+	res := encodeOrFail(t, im, pal, Options{Curves: true})
+	curves := 0
+	for _, d := range pathData(t, res.Doc) {
+		curves += strings.Count(d, "C")
+	}
+	if curves == 0 {
+		t.Error("Curves was set but no curve command was emitted")
+	}
+}
+
+// Every subpath has to be closed. One path element carries several subpaths, so
+// the invariant is a moveto per closepath rather than a single moveto per element.
+// Path is closed by construction, so emitting the repeated closing point as well
+// would open a seam that the renderer has to guess about.
+func TestFittedSubpathsAreClosedAndWellFormed(t *testing.T) {
+	im, pal := disc(120, 120, 44, nil)
+	for _, d := range pathData(t, encodeOrFail(t, im, pal, Options{Curves: true}).Doc) {
+		moves, closes := strings.Count(d, "M"), strings.Count(d, "Z")
+		if moves == 0 {
+			t.Errorf("path data has no moveto: %s", d)
+			continue
+		}
+		if moves != closes {
+			t.Errorf("%d subpaths but %d closepath commands: %s", moves, closes, d)
+		}
+		if !strings.HasSuffix(d, "Z") {
+			t.Errorf("subpath is not closed: %s", d)
+		}
+	}
+}
+
+// A cubic puts three coordinate pairs in the file where a line puts one, so it
+// has to be charged three nodes. Counting it as one would let the node ceiling
+// from decision D6 stop meaning anything the moment curves are enabled.
+func TestACubicCostsThreeNodes(t *testing.T) {
+	line := fittedNodes(curvefit.Path{Segs: []curvefit.Seg{{Kind: curvefit.Line}}})
+	cubic := fittedNodes(curvefit.Path{Segs: []curvefit.Seg{{Kind: curvefit.Cubic}}})
+	if line != 1 {
+		t.Errorf("a line segment counts as %d nodes, want 1", line)
+	}
+	if cubic != 3 {
+		t.Errorf("a cubic counts as %d nodes, want 3", cubic)
+	}
+}
+
+// The curve options used to reach simplify.Loop as whatever the caller passed,
+// which for a zero-value Options meant a zero simplification tolerance. Zero is
+// not a tight tolerance but no tolerance at all, so Douglas-Peucker returned the
+// tracing staircase unchanged and the fitter was asked to fit curves to it. The
+// result still looked like curves, so nothing failed loudly.
+func TestCurveOptionsAreDefaultedNotLeftAtZero(t *testing.T) {
+	o := Options{}.withDefaults()
+	if o.CurveSimplifyTolerance <= 0 {
+		t.Errorf("CurveSimplifyTolerance is %v; a zero would disable simplification entirely",
+			o.CurveSimplifyTolerance)
+	}
+	if o.CurveTolerance <= 0 {
+		t.Errorf("CurveTolerance is %v, want a positive default", o.CurveTolerance)
+	}
+	if o.CurveDepth <= 0 {
+		t.Errorf("CurveDepth is %v, want a positive default", o.CurveDepth)
+	}
+}
+
+// The end-to-end version of the same regression, through the public API. A
+// rasterised disc is the clearest witness: it is one smooth curve, and the line
+// path spends hundreds of points describing its staircase.
+func TestCurvesCollapseARasterisedDisc(t *testing.T) {
+	im, pal := disc(256, 256, 100, nil)
+
+	measure := func(o Options) (curves, nodes int) {
+		o.Tolerance = 0.25
+		o = o.withDefaults()
+		for _, d := range pathData(t, encodeOrFail(t, im, pal, o).Doc) {
+			curves += strings.Count(d, "C")
+		}
+		return curves, encodeOrFail(t, im, pal, o).Nodes
+	}
+
+	lineCurves, lineNodes := measure(Options{})
+	curveCurves, curveNodes := measure(Options{Curves: true, CurveSimplifyTolerance: 1})
+
+	if lineCurves != 0 {
+		t.Fatalf("the line path emitted %d cubics, want none", lineCurves)
+	}
+	if curveCurves < 4 {
+		t.Errorf("the disc fitted to %d cubics, want at least 4", curveCurves)
+	}
+	if curveNodes >= lineNodes {
+		t.Errorf("the curve path used %d nodes against the line path's %d, want fewer",
+			curveNodes, lineNodes)
+	}
+	t.Logf("disc: lines %d nodes, curves %d nodes in %d cubics", lineNodes, curveNodes, curveCurves)
 }

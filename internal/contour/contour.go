@@ -40,10 +40,15 @@ import (
 // origin is the top-left sample and y grows downwards, matching image order.
 type Pt struct{ X, Y float64 }
 
-func (a Pt) sub(b Pt) Pt      { return Pt{a.X - b.X, a.Y - b.Y} }
-func (a Pt) add(b Pt) Pt      { return Pt{a.X + b.X, a.Y + b.Y} }
-func (a Pt) mul(s float64) Pt { return Pt{a.X * s, a.Y * s} }
-func (a Pt) dist(b Pt) float64 {
+// Sub and the operations below it are exported because Pt is the project's
+// geometry type and the first stage outside this package needed them. Keeping
+// them private would only have meant every consumer re-deriving the same three
+// lines, and a second copy of a distance function is a second chance to get the
+// length wrong.
+func (a Pt) Sub(b Pt) Pt      { return Pt{a.X - b.X, a.Y - b.Y} }
+func (a Pt) Add(b Pt) Pt      { return Pt{a.X + b.X, a.Y + b.Y} }
+func (a Pt) Mul(s float64) Pt { return Pt{a.X * s, a.Y * s} }
+func (a Pt) Dist(b Pt) float64 {
 	return math.Hypot(a.X-b.X, a.Y-b.Y)
 }
 
@@ -284,7 +289,7 @@ func edgePair(mask int) (int, int) {
 func lerpEdge(a, b Pt, va, vb, level float64) Pt {
 	d := vb - va
 	if d == 0 {
-		return a.mul(0.5).add(b.mul(0.5))
+		return a.Mul(0.5).Add(b.Mul(0.5))
 	}
 	t := (level - va) / d
 	// Clamp: a value within one ulp of the level on the "wrong" side must not
@@ -294,7 +299,7 @@ func lerpEdge(a, b Pt, va, vb, level float64) Pt {
 	} else if t > 1 {
 		t = 1
 	}
-	return a.add(b.sub(a).mul(t))
+	return a.Add(b.Sub(a).Mul(t))
 }
 
 // saddle returns the value of the bilinear interpolant at the cell centre, which
@@ -473,7 +478,7 @@ func (l Loop) Length() float64 {
 	}
 	total := 0.0
 	for i := 1; i < len(l); i++ {
-		total += l[i-1].dist(l[i])
+		total += l[i-1].Dist(l[i])
 	}
 	return total
 }
@@ -520,9 +525,9 @@ func (l Loop) Centroid() Pt {
 		}
 		s := Pt{}
 		for _, p := range l {
-			s = s.add(p)
+			s = s.Add(p)
 		}
-		return s.mul(1 / float64(len(l)))
+		return s.Mul(1 / float64(len(l)))
 	}
 	cx, cy := 0.0, 0.0
 	for i, p := range l {

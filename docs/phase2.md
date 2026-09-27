@@ -387,30 +387,111 @@ distinctes, donc aucun échantillon ne peut l'atteindre.
 `TestNodeExactlyOnLevelFormsAFourWayJunction` documente le cas plutôt que de le
 corriger.
 
-### Pas d'antialiasing, pas de Béziers
+### Béziers : le fitter marche, l'intégration a perdu puis a été réparée
 
-Les contours sont des segments droits. Sur un logo à fort contraste, un segment
-entre deux points de contour successifs laisse des marches d'escalier visibles.
-potrace ajuste des courbes de Bézier quadratiques et atteint une qualité de
-contour au sens perceptuel.
+`internal/curvefit` est écrit, testé et correct sur sa propre entrée. Un cercle de
+724 points y devient **8 cubiques, 24 points, erreur 0,26 px** pour une tolérance de
+0,4. Les coins sont préservés, un côté droit reste un `L`, les segments s'enchaînent
+sans trou et le résultat ne dépend pas du vertex de départ.
 
-C'est l'écart structurel restant, et le pire cas le confirme :
-`pixelart/blob` n'a aucun antialiasing, donc rien à reprocher à l'interpolation
-linéaire, et `grid` le restitue **exactement** (ssim 1,0000, PSNR inf) pendant
-que `trace` plafonne à 0,8392 avec 58 points. Sur du contenu aligné sur la grille,
-le contour en segments droits est un handicap et non une approximation : il encode une
-frontière qui, elle, est déjà un escalier parfait. C'est l'argument le plus fort
-en faveur des Béziers, et il ne viendra pas des photos.
+Branché sur `trace` derrière `-curves`, il perdait d'abord sur les sept cas du
+corpus, et pire sur un cercle parfait. Deux causes, toutes deux en amont du fitter.
+
+**Le fitter recevait une marche d'escalier.** Un cercle rasterisé, tracé par
+marching squares, est une suite de marches d'1 px. Chaque marche est un angle
+droit, donc la détection de coins la classait en coin à juste titre — arrondir un
+angle droit, c'est transformer un disque en pastille. Les cubiques qui en sortaient
+le montraient sans interprétation : `C26.50 31.62 26.50 29.88 26.50 31.00` a son
+point de contrôle **derrière** ses extrémités et fait demi-tour.
+
+**Et le poids de gradient rendait `-tol` inerte.** Dans `simplify` :
+
+```
+budget = Tolerance * Reference / (Reference + gradient)
+```
+
+Sur un bord dur le gradient vaut environ 1,4 pour `Reference = 0,05`, donc la
+tolérance effective est divisée par un facteur ~30. Mesuré sur le disque, le chemin
+pondéré rend **288 points à toute tolérance de 0,25 à 4** : le curseur ne commande
+rien du tout. C'est voulu pour protéger les arêtes dures, mais sur une frontière
+qui est dure *partout*, le mécanisme protège la marche d'escalier au lieu de
+l'absorber.
+
+La correction est de ne pas peser sur le chemin courbé, parce qu'un chemin qui
+remporte les courbes a d'abord besoin que la marche disparaisse :
+
+| disque 256×256, r=100 | points `trace` | points `-curves` |
+|---|--:|--:|
+| chemin pondéré, `-tol 0,25` à `4` | 288 (constant) | — |
+| non pondéré, tolérance 1 | 288 → **33** | 41 nœuds en 6 cubiques |
+
+Le poids reste sur le chemin lignes, où il fait ce qu'il a été construit pour. La
+simplification du chemin courbé a sa propre tolérance, `-curve-simplify`, valant 1
+px par défaut : ce n'est pas la même grandeur que la tolérance d'ajustement, l'une
+efface l'escalier de tracé et l'autre remet de la courbure.
+
+**Un bug de plus est tombé en route.** `Options.withDefaults` ne gave aucune valeur
+par défaut aux options de courbe, donc une `Options{}` de bibliothèque laissait
+`CurveSimplifyTolerance` à **zéro**. Zéro n'est pas une tolérance serrée mais
+l'absence de tolérance : Douglas-Peucker renvoyait alors tous les points tracés, et
+le fitter recevait l'escalier complet. Rien n'échouait bruyamment, la sortie
+ressemblait à des courbes. C'est maintenant couvert par un test de régression.
+
+Une troisième pièce : `internal/polygon`, qui isole les coins par la longueur de
+contour qui les sépare plutôt que par leur angle seul. Un seuil d'angle ne peut pas
+faire les deux à la fois — il rejette la marche, ou il accepte le bruit. Limite
+connue et assumée : là où une marche rejoint un côté droit, le coin n'est pas trouvé,
+car la marche voisine tourne de 45° sur un pixel et se trouve donc à moins de 2 px.
+Rendre ce seuil `QuietAngle` plus permissif répare ce cas et en casse d'autres ; le
+discriminant qu'il faut est plus fin qu'un angle unique.
+
+#### Ce que ça donne, mesuré
+
+Corpus, `-max-nodes 4000`, `-curve-tol 0.4`, `-curve-simplify 1` :
+
+| cas | octets `trace` | octets `-curves` | ratio | score `trace` | score `-curves` |
+|---|--:|--:|--:|--:|--:|
+| `icon/gear` | 79 411 | 7 658 | 10,4× | 0,1036 | 0,1197 |
+| `logo/mark` | 234 590 | 19 115 | 12,3× | 0,1466 | 0,1672 |
+| `lineart/glyph` | 14 658 | 1 989 | 7,4× | 0,1390 | **0,1389** |
+| `ui/panel` | 17 967 | 6 964 | 2,6× | 0,1490 | 0,1698 |
+| `alpha/badge` | 2 314 | 737 | 3,1× | 0,3059 | 0,3112 |
+| `pixelart/blob` | 949 | 606 | 1,6× | 0,2492 | 0,2560 |
+| `logo/mark-scaled` | 40 098 | 43 504 | 0,9× | 0,0812 | 0,0887 |
+
+Sur les deux photos de `assets/png`, en `-k 8` :
+
+| image | octets `trace` | octets `-curbes` | ratio | ssim `trace` | ssim `-curves` |
+|---|--:|--:|--:|--:|--:|
+| `des.png` | 884 745 | 291 852 | 3,0× | 0,8547 | 0,8531 |
+| `tux.png` | 680 581 | 183 450 | 3,7× | 0,7086 | 0,6968 |
+
+Donc le tableau s'est inversé : ce n'est plus une régression partout, c'est un
+**échange** — jusqu'à 12× plus petit contre +0,005 à +0,021 de score, pour 0 à
+−0,012 de ssim. `lineart/glyph` s'améliore même légèrement. `logo/mark-scaled` est
+le seul cas qui grossit, de 8 %.
+
+`-curves` reste **désactivé par défaut** : c'est un arbitrage, pas un gain franc, et
+un mode qui dégrade la fidélité en silence n'a pas sa place dans un défaut. Il se
+règle maintenant explicitement, et l'amplitude du gain dépend de la forme : c'est le
+premier mode où le contenu décide vraiment du résultat.
+
+Ce que cela dit du contenu tient toujours : `pixelart/blob` reste l'argument le
+plus fort en faveur des Béziers, `grid` le restituant exactement (ssim 1,0000)
+pendant que `trace` plafonne à 0,8392.
 
 ## Suite
 
-1. **Ajuster des courbes de Bézier** à la potrace. C'est le premier item de la
-   liste depuis que `-bg` a résolu l'alpha, et l'argument le plus fort n'est pas
-   une photo : c'est `pixelart/blob`, où `grid` restitue l'image exactement et le
-   contour en segments droits plafonne à 0,2492.
-2. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
+1. **Trancher `-curves`.** Le chemin est maintenant un échange mesuré, 2,6× à 12×
+   plus petit contre ~0,02 de score. Ce qui manque n'est plus la mécanique mais la
+   décision : est-ce un mode qu'on expose, et à quelles conditions ? La question
+   se tranche sur le contenu, donc sur un corpus plus large qu'à présent.
+2. **Le coin en bout de marche diagonale.** `internal/polygon` le manque encore.
+   Il faut regarder la série de virages et non un angle isolé, ce qui est une autre
+   fonction qu'un seuil.
+3. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
    20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
-3. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
+4. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
    sort de `prune` et donnerait à `ui/panel` le poids d'un cas réel et non d'un
    seul exemple.
-4. Puis seulement : grain / tramage, et l'axe vidéo de D1.
+5. Puis seulement : grain / tramage, et l'axe vidéo de D1.

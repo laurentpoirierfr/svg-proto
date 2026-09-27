@@ -175,7 +175,7 @@ func TestAsymptoticDeciderResolvesTheSaddleBothWays(t *testing.T) {
 		t.Fatalf("got %d segments, want 2: the above-corners must not be joined", len(segs))
 	}
 	// And the two segments must not touch, or they would be one band.
-	if segs[0].a.dist(segs[0].b) == 0 || segs[0].a.dist(segs[1].a) < 1e-9 {
+	if segs[0].a.Dist(segs[0].b) == 0 || segs[0].a.Dist(segs[1].a) < 1e-9 {
 		t.Error("the two segments share an endpoint, so the decider joined them")
 	}
 
