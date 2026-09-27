@@ -560,12 +560,31 @@ quelconque, les 9 autres paient. À 1,5, en nœuds :
 | `pixelart/blob` | 58 | 27 | 2,1× | +0,0068 | −0,0113 |
 | `logo/mark-scaled` | 2 897 | 2 634 | **1,1×** | +0,0071 | −0,0006 |
 
-**Le cas qui ne profite pas est à 1024 px.** `logo/mark-scaled` est le même logo que
-`logo/mark`, rendu quatre fois plus grand, et le gain y tombe de 11× à 1,1×. Ce
-n'est pas un défaut de la règle : `-curve-simplify` est en pixels, donc à quatre
-fois la résolution il retire quatre fois moins de détail *relatif*. La tolérance
-devrait suivre la résolution et non la fixer. C'est le prochain chantier, et il est
-plus utile que le choix de la constante.
+**Le cas qui ne profite pas dit quelque chose de plus, et pas ce que je croyais.**
+
+`logo/mark-scaled` est le même logo que `logo/mark` — même `viewBox`, mêmes
+chemins, seuls `width`/`height` passent de 256 à 1024. À `-tol 0,25` la ligne
+donne 2 897 nœuds pour le 1024 contre 17 827 pour le 256 : quatre fois plus de
+pixels, **six fois moins** de nœuds. Réduire le rendu 1024 à 256 avec un filtre
+`Box` reproduit exactement le comportement du 256 (24 020 points bruts, 26 % de
+réduction, comme le rendu direct), donc ce n'est ni le fichier ni la douceur de
+l'arête : c'est l'échelle de rastérisation.
+
+J'avais conclu qu'il fallait faire suivre la résolution par `-curve-simplify`, et
+c'est faux. Le gain de `logo/mark-scaled` ne se récupère pas en montant la
+tolérance : il faudrait passer de 1,5 à 24, soit seize fois, pour 2 634 → 1 731
+nœuds, donc 1,5 fois moins, en doublant le score (0,0883 → 0,1830). Sur `mark`
+même, 1,5 → 24 donne 1 614 → 584 nœuds pour un score de 0,1753 → 0,3895. Le
+réglage sature : au-delà de quelques pixels il achète de l'erreur pour presque
+plus rien.
+
+La bonne lecture est inverse. `-curves` gagne là où la ligne gaspille des nœuds,
+et la ligne devient économe quand la rastérisation est fine. C'est un outil de
+basse résolution, pas une amélioration générale : sur `mark` 11×, sur le même
+logo à 1024 1,1×, parce qu'il n'y a plus rien à reprendre. Compte tenu de D6, la
+lecture d'ensemble reste favorable sur la contrainte dure — de 1,1× à 68× pour
+~0,01 de RMSE — mais l'amplitude dépend autant de la résolution que du contenu, et
+c'est la condition à écrire dans la documentation du mode.
 
 Compte tenu de D6, la lecture d'ensemble est favorable : la contrainte dure est le
 nombre de nœuds parce qu'elle ne se comprime pas, et sur cette contrainte le gain
@@ -596,16 +615,19 @@ pendant que `trace` plafonne à 0,8392.
 
 ## Suite
 
-1. **Une tolérance qui suit la résolution.** `-curve-simplify` est en pixels, donc
-   le gain s'effondre à haute résolution : 11× à 256 px, 1,1× à 1024 px pour le
-   même logo. C'est le défaut le plus visible de la chose, et il se corrige en une
-   règle. Vient avant toute décision d'exposer `-curves`, parce qu'elle en change
-   le résultat.
-2. **Trancher `-curves`.** La frontière est mesurée (§ « la frontière »), le gain
-   va de 1× à 68× en nœuds pour ~0,01 de RMSE, et aucun réglage n'est gratuit :
+1. **Trancher `-curves`.** La frontière est mesurée (§ « la frontière »), le gain
+   va de 1,1× à 68× en nœuds pour ~0,01 de RMSE, et aucun réglage n'est gratuit :
    9 cas sur 13 paient. Ce qui manque n'est plus la mécanique ni les chiffres,
-   c'est la décision — et le corpus est encore trop mince sur le *contenu*, six
-   des treize cas étant écrits pour le test.
+   c'est la décision. Deux réserves à écrire dans la documentation du mode :
+   l'amplitude dépend de la résolution — 11× à 256 px, 1,1× à 1024 px pour le même
+   logo, parce que la ligne devient économe quand la rastérisation est fine — et le
+   corpus est trop mince sur le *contenu*, six des treize cas étant écrits pour le
+   test.
+2. **Un test qui compare deux rasters à deux échelles.** Le comportement du traceur
+   dépend de l'échelle de rastérisation, pas seulement de la forme, et rien ne le
+   vérifie. Un même contenu rendu à 256 et 1024 devrait donner des proportions
+   prévisibles ; aujourd'hui il donne 6× *moins* de nœuds au quadruple de la
+   résolution, et le mécanisme n'est pas établi.
 3. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
    20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
 4. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du
