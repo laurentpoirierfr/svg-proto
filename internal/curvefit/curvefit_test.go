@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/elfeo/svg-proto/internal/contour"
+	"github.com/elfeo/svg-proto/internal/polygon"
 )
 
 // circle returns a closed loop approximating a circle, the way marching squares
@@ -221,8 +222,8 @@ func TestFitIsIndependentOfTheStartingVertex(t *testing.T) {
 // threshold pass every fidelity test while quietly mislabelling every rectangle
 // as a smooth blob.
 func TestRightAnglesAreDetectedAsCorners(t *testing.T) {
-	sq := stripClosingPoint(square(0, 0, 30, 20))
-	if got := len(findCorners(sq, DefaultCornerAngle)); got != 4 {
+	sq := polygon.Approximate(square(0, 0, 30, 20), polygon.DefaultOptions()).Loop
+	if got := len(polygon.Corners(sq, polygon.Options{CornerAngle: DefaultCornerAngle})); got != 4 {
 		t.Errorf("a square has %d corners at the default threshold, want 4", got)
 	}
 }
@@ -232,7 +233,7 @@ func TestRightAnglesAreDetectedAsCorners(t *testing.T) {
 func TestSmoothRunsAreNotCorners(t *testing.T) {
 	// 24 points on a circle of radius 400 turn 15 degrees per vertex.
 	arc := circle(0, 0, 400, 24)
-	if got := len(findCorners(arc, DefaultCornerAngle)); got != 0 {
+	if got := len(polygon.Corners(arc, polygon.Options{CornerAngle: DefaultCornerAngle})); got != 0 {
 		t.Errorf("a smooth arc has %d corners, want 0", got)
 	}
 }

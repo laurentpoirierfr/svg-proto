@@ -30,6 +30,7 @@ import (
 	"math"
 
 	"github.com/elfeo/svg-proto/internal/contour"
+	"github.com/elfeo/svg-proto/internal/polygon"
 )
 
 // Kind distinguishes the two segment shapes. A straight edge stays a line even
@@ -123,13 +124,14 @@ func (o Options) withDefaults() Options {
 // nothing.
 func Fit(l contour.Loop, o Options) Path {
 	o = o.withDefaults()
-	l = stripClosingPoint(l)
+	approx := polygon.Approximate(l, polygon.Options{CornerAngle: o.CornerAngle})
+	l = approx.Loop
 	n := len(l)
 	if n < 2 {
 		return Path{}
 	}
 
-	corners := findCorners(l, o.CornerAngle)
+	corners := approx.Corners
 	if len(corners) == 0 {
 		// A closed loop with no corner anywhere is a circle, or noise. Treating
 		// every vertex as smooth means one run spanning the whole loop, which is a
@@ -150,43 +152,6 @@ func Fit(l contour.Loop, o Options) Path {
 		out.Segs = append(out.Segs, fitRun(l, run, closed, o)...)
 	}
 	return Path{Segs: out.Segs}
-}
-
-// stripClosingPoint drops the repeated final point that contour.Loop carries by
-// convention. The fitter closes its own path, and leaving the duplicate in makes
-// the seam look like a zero-length edge: the corner test skips it, which splits
-// the loop's runs at the seam and loses the corners either side of it.
-func stripClosingPoint(l contour.Loop) contour.Loop {
-	if len(l) >= 2 && l[0] == l[len(l)-1] {
-		return l[:len(l)-1]
-	}
-	return l
-}
-
-// findCorners returns the indices of the loop's corners, at least one. A vertex
-// is a corner when the turn there is sharper than the threshold. The turn is
-// measured between the two edges, and an edge of zero length counts as no turn at
-// all rather than as a corner, because marching squares can emit a repeated point
-// and a repeated point is not a shape.
-func findCorners(l contour.Loop, angle float64) []int {
-	n := len(l)
-	cosLimit := math.Cos(angle * math.Pi / 180)
-	var corners []int
-	for i := 0; i < n; i++ {
-		prev := l[(i-1+n)%n]
-		cur := l[i]
-		next := l[(i+1)%n]
-		in := unit(cur.Sub(prev))
-		out := unit(next.Sub(cur))
-		if in == (contour.Pt{}) || out == (contour.Pt{}) {
-			continue
-		}
-		// cos of the turn angle: 1 is straight ahead, -1 is a full reversal.
-		if in.X*out.X+in.Y*out.Y < cosLimit {
-			corners = append(corners, i)
-		}
-	}
-	return corners
 }
 
 // runBetween returns the indices of the run from start to end inclusive, walking
