@@ -1,0 +1,26 @@
+# build output
+/bin/
+
+# Encoder output, regenerable bit-for-bit by `make convert` and `make
+# corpus-bench` (verified: deleting both and re-running reproduces every file
+# identically). Tracking them meant 6.3 MiB of the 7.4 MiB tree, and every
+# encoder change rewrote all 36 files, which buries the actual diff on a branch
+# that is supposed to be reviewable.
+#
+# The measurement record is docs/*.md and that IS tracked: the point of the
+# project is turning "I improved it a bit" into "I improved it by X% on the
+# corpus", and that claim lives in the generated report, not in the artefacts
+# that produced it.
+/assets/svg/
+/testdata/corpus/.trace/
+
+# coverage
+coverage.out
+coverage.html
+
+# generated demo data (make demo)
+/testdata/demo/
+
+# fuzz corpora discovered locally are interesting; the seeds live in the tests.
+# Uncomment only if the corpus grows past what belongs in the repo.
+# /testdata/fuzz/
