@@ -7,6 +7,7 @@
 //	svgimg -in logo.png -out logo.svg -mode embed
 //	svgimg -in photo.png -out photo.svg -mode runlength -k 32 -max-nodes 20000
 //	svgimg -in logo.png -mode trace -k 8 -max-nodes 5000 -report
+//	svgimg -in logo.png -mode trace -k 8 -curves -curve-tol 0.4 -report
 //	svgimg -in a.png -mode grid -tile 16 -report
 //
 // Every run prints the same table, so the encoders are directly comparable.
@@ -54,6 +55,8 @@ func main() {
 		stdout    = flag.Bool("stdout", false, "write the SVG to stdout instead of a file")
 		prettyOut = flag.Bool("pretty", false, "indent the output")
 		bg        = flag.String("bg", "", "composite the source over this sRGB colour before vectorising (e.g. white, #f0f0f0); empty keeps the source alpha")
+		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase")
+		curveTol  = flag.Float64("curve-tol", 0.5, "for trace: largest distance in px between a fitted curve and the points it was fitted from")
 	)
 	flag.Parse()
 
@@ -103,11 +106,13 @@ func main() {
 			res, err = baseline.RunLength(im, pal, opts)
 		case "trace":
 			tres, err = encode.Encode(im, pal, encode.Options{
-				MaxNodes:    *maxNodes,
-				Tolerance:   *tol,
-				AlphaLevels: *alphaLvl,
-				MinArea:     *minArea,
-				Precision:   2,
+				MaxNodes:       *maxNodes,
+				Tolerance:      *tol,
+				AlphaLevels:    *alphaLvl,
+				MinArea:        *minArea,
+				Precision:      2,
+				Curves:         *curves,
+				CurveTolerance: *curveTol,
 			})
 		}
 	default:

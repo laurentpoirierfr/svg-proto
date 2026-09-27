@@ -22,6 +22,7 @@ import (
 
 	"github.com/elfeo/svg-proto/internal/colorconv"
 	"github.com/elfeo/svg-proto/internal/contour"
+	"github.com/elfeo/svg-proto/internal/curvefit"
 	"github.com/elfeo/svg-proto/internal/dom"
 	"github.com/elfeo/svg-proto/internal/field"
 	"github.com/elfeo/svg-proto/internal/pixelbuf"
@@ -62,6 +63,19 @@ type Options struct {
 	// MinArea is the smallest region, in square pixels, worth emitting. Slivers
 	// below it are dropped: each costs a path node and is invisible.
 	MinArea float64
+
+	// Curves replaces the traced staircase with fitted Bezier segments. It is off
+	// by default, so the tracer's output is unchanged until a caller asks for it
+	// and the default can be compared against the fitted one.
+	Curves bool
+
+	// CurveTolerance is the largest distance, in pixels, that a fitted curve may
+	// sit from the points it was fitted from. See curvefit.Options.
+	CurveTolerance float64
+
+	// CurveDepth bounds the subdivision of a run that CurveTolerance cannot
+	// satisfy. See curvefit.Options.
+	CurveDepth int
 }
 
 // withDefaults fills in the zero values that mean "unset".
@@ -395,10 +409,43 @@ func traceBand(f, mag *field.Field, level, tol float64, opts Options) (d string,
 		if len(b) > 0 {
 			b = append(b, ' ')
 		}
-		b = appendSubpath(b, s, opts.Precision)
-		n += len(s) - 1 // the repeated closing point is not a node
+		if opts.Curves {
+			p := curvefit.Fit(s, curvefit.Options{
+				Tolerance: opts.CurveTolerance,
+				MaxDepth:  opts.CurveDepth,
+			})
+			if len(p.Segs) == 0 {
+				// Nothing fitted, so nothing to draw. Emitting a bare "M Z" would be
+				// a shape with no extent, and counting its points would charge the
+				// node budget for a path that draws nothing.
+				b = b[:len(b)-1]
+				continue
+			}
+			b = appendFittedSubpath(b, p, opts.Precision)
+			n += fittedNodes(p)
+		} else {
+			b = appendSubpath(b, s, opts.Precision)
+			n += len(s) - 1 // the repeated closing point is not a node
+		}
 	}
 	return string(b), n, len(traced)
+}
+
+// fittedNodes counts a fitted path's nodes. A straight segment contributes one
+// point, but a cubic contributes three, because that is what it actually puts in
+// the file. Counting a curve as one node would let the fitter claim a budget win
+// it did not take, and the node ceiling from decision D6 would stop meaning
+// anything the moment curves are switched on.
+func fittedNodes(p curvefit.Path) int {
+	n := 0
+	for _, s := range p.Segs {
+		if s.Kind == curvefit.Cubic {
+			n += 3
+		} else {
+			n++
+		}
+	}
+	return n
 }
 
 // appendSubpath writes one closed contour as M p0 L p1 ... L pn Z, dropping the
@@ -415,6 +462,35 @@ func appendSubpath(b []byte, l contour.Loop, prec int) []byte {
 		b = appendNum(b, l[i].Y, prec)
 	}
 	return append(b, 'Z')
+}
+
+// appendFittedSubpath writes one fitted path as a closed subpath: M for the
+// first point, then L or C per segment, then Z. The repeated closing point that
+// contour.Loop carries is not a shape here, because Path is closed by
+// construction: the last segment already ends where the first one began, and
+// repeating it would open a seam for no reason.
+func appendFittedSubpath(b []byte, p curvefit.Path, prec int) []byte {
+	b = append(b, 'M')
+	b = appendPt(b, p.Segs[0].P0, prec)
+	for _, s := range p.Segs {
+		if s.Kind == curvefit.Cubic {
+			b = append(b, 'C')
+			b = appendPt(b, s.C1, prec)
+			b = appendPt(b, s.C2, prec)
+			b = appendPt(b, s.P3, prec)
+			continue
+		}
+		b = append(b, 'L')
+		b = appendPt(b, s.P3, prec)
+	}
+	return append(b, 'Z')
+}
+
+func appendPt(b []byte, p contour.Pt, prec int) []byte {
+	b = appendNum(b, p.X, prec)
+	b = append(b, ' ')
+	b = appendNum(b, p.Y, prec)
+	return append(b, ' ')
 }
 
 func appendNum(b []byte, v float64, prec int) []byte {

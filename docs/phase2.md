@@ -387,27 +387,73 @@ distinctes, donc aucun échantillon ne peut l'atteindre.
 `TestNodeExactlyOnLevelFormsAFourWayJunction` documente le cas plutôt que de le
 corriger.
 
-### Pas d'antialiasing, pas de Béziers
+### Béziers : le fitter marche, l'intégration perd
 
-Les contours sont des segments droits. Sur un logo à fort contraste, un segment
-entre deux points de contour successifs laisse des marches d'escalier visibles.
-potrace ajuste des courbes de Bézier quadratiques et atteint une qualité de
-contour au sens perceptuel.
+`internal/curvefit` est écrit, testé et correct sur sa propre entrée. Un cercle de
+724 points y devient **8 cubiques, 24 points, erreur 0,26 px** pour une tolérance de
+0,4. Les coins sont préservés, un côté droit reste un `L`, les segments s'enchaînent
+sans trou et le résultat ne dépend pas du vertex de départ.
 
-C'est l'écart structurel restant, et le pire cas le confirme :
-`pixelart/blob` n'a aucun antialiasing, donc rien à reprocher à l'interpolation
-linéaire, et `grid` le restitue **exactement** (ssim 1,0000, PSNR inf) pendant
-que `trace` plafonne à 0,8392 avec 58 points. Sur du contenu aligné sur la grille,
-le contour en segments droits est un handicap et non une approximation : il encode une
-frontière qui, elle, est déjà un escalier parfait. C'est l'argument le plus fort
-en faveur des Béziers, et il ne viendra pas des photos.
+Branché sur `trace` derrière `-curves`, il **perd sur les sept cas du corpus**, et
+pire sur un cercle parfait :
+
+| cas | points `trace` | points `-curves` | score `trace` | score `-curves` |
+|---|--:|--:|--:|--:|
+| `icon/gear` | 6 426 | 15 856 | 0,1036 | 0,1075 |
+| `logo/mark` | 17 827 | 31 722 | 0,1466 | 0,1654 |
+| `lineart/glyph` | 1 089 | 2 751 | 0,1390 | 0,1432 |
+| `pixelart/blob` | 58 | 118 | 0,2492 | 0,2842 |
+| `ui/panel` | 1 365 | 3 136 | 0,1490 | 0,1480 |
+| `alpha/badge` | 714 | 1 824 | 0,3059 | 0,3180 |
+| `logo/mark-scaled` | 2 897 | 4 669 | 0,0812 | 0,0839 |
+
+Ce n'est pas la faute du fitter, et ce n'est pas non plus le contenu du corpus qui
+serait trop rectiligne. La cause est en amont, et elle est mesurable : **le fitter
+reçoit une marche d'escalier**.
+
+Un cercle rasterisé sans anticrénelage, tracé par marching squares, est une suite de
+marches d'1 px. Chaque marche est un angle droit, donc `findCorners` la classe en
+coin à juste titre — arrondir un angle droit, c'est transformer un disque en
+pastille. Les runs lisses qui restent entre deux marches font deux ou trois points,
+et une cubique sur deux points est une cubique qui ne veut rien dire. Le résultat
+enPath le montre sans interprétation : `C26.50 31.62 26.50 29.88 26.50 31.00` a son
+point de contrôle **derrière** ses extrémités et fait demi-tour. Ces cubiques ne
+sont pas des courbes, ce sont des marches recomb。想要 des points, pas de la fidélité.
+
+Remonter `-tol` ne corrige rien, et c'est le second constat : de 0,25 à 3 px, le
+nombre de points du cercle passe de 724 à 723. La raison est dans `simplify` :
+
+```
+budget = Tolerance * Reference / (Reference + gradient)
+```
+
+Sur un bord dur le gradient vaut environ 1,4 pour `Reference = 0,05`, donc la
+tolérance effective est divisée par un facteur ~30. `-tol 3` se comporte comme
+`-tol 0,1`. C'est voulu — le poids existe pour protéger les arêtes dures — mais
+deux conséquences en découlent, et il faut les nommer :
+
+1. le curseur `-tol` est presque inerte sur tout son intervalle utile, ce qui rend
+   le réglage difficile à raisonner ;
+2. le mécanisme qui protège la marche d'escalier est exactement celui qui devrait
+   l'absorber.
+
+Il manque donc l'étape qui manque : l'**approximation polygonale** de potrace, qui
+fait d'un seul geste ce que deux étapes font mal ici — identifier les portions
+rectilignes *et* transformer la marche en arcs lisses. `-curves` reste **désactivé
+par défaut** tant que cette étape n'existe pas : l'activer serait livré une
+régression, pas une fonctionnalité.
+
+Ce que cela dit du contenu, en revanche, tient toujours : `pixelart/blob` reste
+l'argument le plus fort en faveur des Béziers, `grid` le restituant exactement
+(ssim 1,0000) pendant que `trace` plafonne à 0,8392.
 
 ## Suite
 
-1. **Ajuster des courbes de Bézier** à la potrace. C'est le premier item de la
-   liste depuis que `-bg` a résolu l'alpha, et l'argument le plus fort n'est pas
-   une photo : c'est `pixelart/blob`, où `grid` restitue l'image exactement et le
-   contour en segments droits plafonne à 0,2492.
+1. **L'approximation polygonale avant les Béziers.** `internal/curvefit` est
+   écrit et juste ; c'est son entrée qui est mauvaise. Il faut une étape
+   d'approximation polygonale qui transforme la marche d'escalier en runs lisses
+   avant d'ajuster, et qui rende `-tol` à nouveau dosable. `-curves` reste off
+   jusque-là.
 2. **Rejouer le budget de points** sur `logo/mark`, seul cas du corpus au-delà de
    20 000 points, en reparamétrant `simplify` plutôt que la table de palette.
 3. **Étendre le corpus** vers les 30 à 60 cas prévus, ce qui décide notamment du

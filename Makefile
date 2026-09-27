@@ -321,6 +321,12 @@ CORPUS_MAX_NODES ?= 20000
 # prepared by another rule.
 CORPUS_BG       ?= white
 
+# How far a fitted curve may sit from the points it was fitted from, in px. See
+# curvefit.Options. This is a different quantity from CORPUS_TOL, which simplifies
+# the traced staircase before any fitting happens: the two budgets apply in
+# sequence, so the shape a curve is fitted from is already the simplified one.
+CORPUS_CURVE_TOL ?= 0.4
+
 .PHONY: corpus-bench
 # The trace-bg row is trace with the source composited over the measurement's own
 # backdrop. It shows what flattening buys instead of leaving it to be rediscovered,
@@ -345,11 +351,12 @@ corpus-bench: $(GOBIN)/svgimg $(GOBIN)/svgstat ## Trace every corpus raster and 
 			[ -e "$$png" ] || continue; \
 			cat=$$(basename "$$(dirname "$$png")"); \
 			name=$$(basename "$$png" .png); \
-			for m in grid runlength trace trace-bg; do \
+			for m in grid runlength trace trace-bg trace-curves; do \
 				out='$(CORPUS_TRACE)'/"$$cat-$$name-$$m.svg"; \
 				enc=$$m; extra=''; \
 				[ "$$m" = trace ] && extra="-max-nodes $(CORPUS_MAX_NODES)"; \
 				if [ "$$m" = trace-bg ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -bg $(CORPUS_BG)"; fi; \
+				if [ "$$m" = trace-curves ]; then enc=trace; extra="-max-nodes $(CORPUS_MAX_NODES) -curves -curve-tol $(CORPUS_CURVE_TOL)"; fi; \
 				$(GOBIN)/svgimg -in "$$png" -mode "$$enc" -k $(BASELINE_K) -tol $(CORPUS_TOL) \
 					$$extra -out "$$out" >/dev/null 2>&1 || continue; \
 				$(GOBIN)/svgstat "$$out" --ref "$$png" --oracle $(ORACLE) -bg $(CORPUS_BG) \
