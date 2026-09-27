@@ -327,7 +327,7 @@ CORPUS_BG       ?= white
 # sequence, so the shape a curve is fitted from is already the simplified one.
 CORPUS_CURVE_TOL ?= 0.4
 # How hard the curve path strips the tracing staircase before fitting.
-CORPUS_CURVE_SIMPLIFY ?= 1
+CORPUS_CURVE_SIMPLIFY ?= 1.5
 
 .PHONY: corpus-bench
 # The trace-bg row is trace with the source composited over the measurement's own
