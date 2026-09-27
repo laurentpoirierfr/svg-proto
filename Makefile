@@ -370,6 +370,18 @@ corpus-bench: $(GOBIN)/svgimg $(GOBIN)/svgstat ## Trace every corpus raster and 
 	@echo "wrote $(CORPUS_BENCH)"
 	@column -t -s'|' < $(CORPUS_BENCH)
 
+# The node budget both paths are held to when they are compared. It has to bind,
+# or the comparison is between a constrained mode and an unconstrained one: at
+# 20000 the line path was pushed to 10.6 px tolerance on logo/mark while the
+# curve path sat at 966 nodes untouched, which is how a 22x win was published as
+# 11x. See tools/corpus-frontier.sh, which reports the effective tolerance so a
+# row where the budget did the work is visible rather than averaged in.
+FRONTIER_BUDGET ?= 4000
+
+.PHONY: corpus-frontier
+corpus-frontier: $(GOBIN)/svgimg $(GOBIN)/svgstat ## Compare the line and curve paths at a common node budget
+	@tools/corpus-frontier.sh $(FRONTIER_BUDGET)
+
 .PHONY: bench-table
 bench-table: $(GOBIN)/svgstat ## Measure every corpus SVG into docs/benchmarks.md
 	@test -d '$(CORPUS)' || { echo "no corpus at $(CORPUS); see 'make corpus'"; exit 1; }

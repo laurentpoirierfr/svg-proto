@@ -560,31 +560,67 @@ quelconque, les 9 autres paient. À 1,5, en nœuds :
 | `pixelart/blob` | 58 | 27 | 2,1× | +0,0068 | −0,0113 |
 | `logo/mark-scaled` | 2 897 | 2 634 | **1,1×** | +0,0071 | −0,0006 |
 
-**Le cas qui ne profite pas dit quelque chose de plus, et pas ce que je croyais.**
+**Ce tableau là n'est pas équitable, et il est remplacé plus bas.** Les deux modes
+recevaient `-max-nodes 20000` dans `corpus-bench`, donc le mode lignes était
+bridé au plafond pendant que le mode courbé, qui n'approche jamais 20 000, ne
+l'était pas. Sur `logo/mark` la boucle a escaladé la tolérance de 0,25 à 1,0
+pour passer sous le plafond, et c'est ce 17 827 qui est comparé au 1 614 du mode
+courbé. Le 1,1× de `logo/mark-scaled` est le même artefact, dans l'autre sens :
+là, c'est le 1024 qui a été bridé et réduit à 2 897.
 
-`logo/mark-scaled` est le même logo que `logo/mark` — même `viewBox`, mêmes
-chemins, seuls `width`/`height` passent de 256 à 1024. À `-tol 0,25` la ligne
-donne 2 897 nœuds pour le 1024 contre 17 827 pour le 256 : quatre fois plus de
-pixels, **six fois moins** de nœuds. Réduire le rendu 1024 à 256 avec un filtre
-`Box` reproduit exactement le comportement du 256 (24 020 points bruts, 26 % de
-réduction, comme le rendu direct), donc ce n'est ni le fichier ni la douceur de
-l'arête : c'est l'échelle de rastérisation.
+Ce qu'il faut comparer, c'est le même logo à deux résolutions, **sans plafond** :
 
-J'avais conclu qu'il fallait faire suivre la résolution par `-curve-simplify`, et
-c'est faux. Le gain de `logo/mark-scaled` ne se récupère pas en montant la
-tolérance : il faudrait passer de 1,5 à 24, soit seize fois, pour 2 634 → 1 731
-nœuds, donc 1,5 fois moins, en doublant le score (0,0883 → 0,1830). Sur `mark`
-même, 1,5 → 24 donne 1 614 → 584 nœuds pour un score de 0,1753 → 0,3895. Le
-réglage sature : au-delà de quelques pixels il achète de l'erreur pour presque
-plus rien.
+| | lignes | courbes | ratio |
+|---|--:|--:|--:|
+| `logo/mark` 256×256 | 21 833 | 966 | **22,6×** |
+| `logo/mark-scaled` 1024×1024 | 87 260 | 1 802 | **48,4×** |
 
-La bonne lecture est inverse. `-curves` gagne là où la ligne gaspille des nœuds,
-et la ligne devient économe quand la rastérisation est fine. C'est un outil de
-basse résolution, pas une amélioration générale : sur `mark` 11×, sur le même
-logo à 1024 1,1×, parce qu'il n'y a plus rien à reprendre. Compte tenu de D6, la
-lecture d'ensemble reste favorable sur la contrainte dure — de 1,1× à 68× pour
-~0,01 de RMSE — mais l'amplitude dépend autant de la résolution que du contenu, et
-c'est la condition à écrire dans la documentation du mode.
+Là, deux faits. Le chemin lignes croît **linéairement** : 4,0× de nœuds pour 4×
+de résolution, exactement le rapport de périmètre, ce qu'attendrait n'importe
+quel simplificateur qui travaille en pixels. Le chemin courbé croît
+**sous-linéairement** : 1,87× pour 4×. Donc l'avantage de `-curves` **augmente**
+avec la résolution, de 22,6× à 48,4×, au lieu de s'effondrer.
+
+**J'ai donc publié deux fois la conclusion inverse de la bonne.** D'abord en
+concluant qu'il fallait faire suivre la résolution par `-curve-simplify`, ce qui
+n'était pas faux mais était la moitié de la histoire ; puis en concluant
+l'inverse, que `-curves` était un outil de basse résolution. Les deux fois la
+mesure portait sur la boucle de budget et pas sur le mode. Le mécanisme n'est
+toujours pas établi — mais il n'est plus nécessaire pour décider, et la
+propriété utile est simple et solide : **le chemin lignes paie la résolution au
+proportionnel, le chemin courbé non.**
+
+La mesure équitable est celle qui bride les deux modes au même plafond, ce que
+fait `make corpus-frontier`. À 4 000 nœuds, `k=16`, `-tol 0,25`,
+`-curve-tol 0,4`, `-curve-simplify 1,5` :
+
+| cas | lignes | tol eff. | courbes | Δscore |
+|---|--:|--:|--:|--:|
+| `synthetic/arrow` | 1 475 | 0,25 | 28 | **−0,0001** |
+| `synthetic/tri-blade` | 3 109 | **4,0** | 139 | +0,0034 |
+| `synthetic/diagonal-square` | 3 263 | **4,0** | 111 | +0,0035 |
+| `synthetic/diag-stripes` | 2 214 | 0,25 | 54 | +0,0093 |
+| `synthetic/diagonal-stroke` | 3 203 | **4,0** | 95 | +0,0152 |
+| `synthetic/chevron` | 2 803 | 0,25 | 37 | +0,0268 |
+| `logo/mark-scaled` | 2 325 | **12,13** | 1 802 | +0,0035 |
+| `lineart/glyph` | 1 077 | 0,25 | 104 | +0,0009 |
+| `alpha/badge` | 706 | 0,25 | 70 | +0,0019 |
+| `pixelart/blob` | 56 | 0,25 | 23 | +0,0068 |
+| `ui/panel` | 1 304 | 0,25 | 361 | +0,0058 |
+| `icon/gear` | 1 966 | **4,0** | 409 | +0,0152 |
+| `logo/mark` | 1 155 | **10,61** | 966 | +0,0161 |
+
+24 656 → 4 199 nœuds, soit **5,9×**, et le plafond passe de 47 % d'usage à 8 %.
+La moyenne du Δscore est de **+0,0079**, et un seul cas s'améliore, `arrow`, de
+0,0001, ce qui est du bruit.
+
+Ce qui rend ce tableau lisible, c'est la colonne « tol eff. » : sur **six** cas
+sur treize, la boucle de budget a escaladé la tolérance du mode lignes jusqu'à
+4, 10,6 ou 12,1. Autrement dit, sur la moitié du corpus le mode lignes a été
+**poussé vers la dégradation** pour tenir le plafond, pendant que le mode courbé
+tourne à 0,25 sans jamais l'approcher. Et sur cinq de ces six cas, le mode
+courbé coûte quand même de la fidélité, de +0,0034 à +0,0161. C'est le coût
+honnête du mode : il n'est pas gratuit, même face à un adversaire dégradé.
 
 Compte tenu de D6, la lecture d'ensemble est favorable : la contrainte dure est le
 nombre de nœuds parce qu'elle ne se comprime pas, et sur cette contrainte le gain
