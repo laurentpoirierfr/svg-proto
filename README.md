@@ -132,6 +132,7 @@ un linter manquant ne doit jamais pouvoir faire échouer un build. `gofmt -l` et
 
 ## Structure visée
 
+![Schéma d'architecture](assets/schema.png)
 
 Chaque étage du pipeline est un paquet, avec des **structs Go en entrée et en
 sortie — jamais de chaînes SVG avant la toute dernière étape**. Une fonction
@@ -142,14 +143,15 @@ internal/pixelbuf   décodage, buffer planaire, sRGB -> linéaire -> OKLab, alph
 internal/quant      median-cut en OKLab, sans tramage
 internal/field      lissage anisotrope, gradient, magnitude
 internal/contour    marching squares sous-pixel, topologie, imbrication
+internal/polygon    coins réels vs artefacts de raster, isolation du virage
 internal/simplify   Douglas-Peucker à tolérance pondérée par le gradient
-internal/fitcurve   Selinger quadratique, fallback cubique
+internal/curvefit   ajustement de Béziers, coins préservés, subdivision
 internal/pathdata   construction et minimisation des `d`
 internal/dom        l'arbre SVG interne
 internal/encode     sérialisation, groupement par couleur
 internal/budget     budget de nœuds et échelle de dégradation
 
-cmd/svgstat         l'instrument      cmd/svgimg   la lib   cmd/svgvid  la vidéo
+cmd/svgstat         l'instrument      cmd/svgimg   la lib   cmd/svgvid   la vidéo
 ```
 
 Déjà présent :
