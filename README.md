@@ -100,6 +100,24 @@ ce qui donne au traceur de contours quelque chose à battre.
 de tronquer, donc l'image reste entièrement couverte ; sur `runlength` il
 **tronque** et le signale, avec la couverture obtenue.
 
+## La vidéo : `svgvid`
+
+Le conteneur D1 en v1 : un poster, des keyframes, des deltas transparents, un
+sidecar JSON et un player minimal.
+
+```console
+$ ffmpeg -i clip.mp4 -vf fps=24 frames/%04d.png
+$ svgvid -in frames -out out -fps 24 -k 16
+$ python3 -m http.server -d out     # ouvrir index.html
+```
+
+Un delta ne repeint que les pixels dont la couleur a changé ; un keyframe est
+inséré quand le delta ne serait plus moins cher, ou tous les `-gop` frames.
+`-max-nodes` s'applique par couche. Sur `ui/panel` plus un disque mobile (24
+frames, 2,2 % de pixels changés), le clip coûte **4,2×** moins de nœuds que
+24 tracés indépendants en lignes, **5,2×** en courbes. Le format, le player et
+les limites sont décrits dans [docs/video.md](docs/video.md).
+
 ## Makefile
 
 `make help` liste tout. Rien que du toolchain Go n'est requis ; l'oracle de rendu
@@ -165,6 +183,7 @@ Déjà présent :
 | `internal/quant` | median-cut en OKLab, alpha-pondéré, sans tramage |
 | `internal/dom` | l'arbre SVG interne : structs Go, attributs ordonnés |
 | `internal/baseline` | les trois encodeurs de référence + le budget de nœuds |
+| `internal/anim` | poster + keyframes + deltas, sidecar JSON, player |
 
 ## Commandes
 
@@ -174,6 +193,7 @@ go test ./...
 go run ./cmd/svgstat <fichier.svg> [--ref <raster>]
 go run ./cmd/svgimg -in <raster.png> -mode runlength -out <sortie.svg>
 go run ./cmd/svgimg -in <raster.png> -mode trace -k 8 -max-nodes 5000 -out <sortie.svg>
+go run ./cmd/svgvid -in <dossier-frames> -out <dossier-sortie> -fps 24 -k 16
 
 # aplatir la source sur un fond connu avant de vectoriser, et mesurer des deux
 # côtés sur ce fond. Sans cela l'alpha ne peut pas être restitué : le traceur ne
@@ -222,7 +242,7 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <so
 | 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,4× à 104,2× de nœuds contre +0,0193 de score en moyenne hors photographie (jusqu'à +0,06), mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 7,0× sur les trente-trois cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
 | 3 | modes (pixel art, screenshot+texte, trait, photo) | à faire |
 | 4 | sémantique, accessibilité, IDs stables | à faire |
-| 5 | vidéo (tracking, delta, animation par transformation) | **mesuré, à faire** — clé+delta vaut 7 à 8× sur une UI complexe majoritairement statique (2,2 % de pixels changés), mais perd face aux courbes quand tout bouge ; voir [docs/plan.md](docs/plan.md) |
+| 5 | vidéo (tracking, delta, animation par transformation) | **v1 écrite** — poster + keyframes + deltas + sidecar + player dans `internal/anim` et `cmd/svgvid` ; 4,2× moins de nœuds que toutes-I en lignes, 5,2× en courbes sur `ui/panel` + disque mobile (k=11). Le tracking et l'animation par transformation restent à faire. Voir [docs/video.md](docs/video.md) |
 | 6 | outillage (CLIs, WASM, CI, docs) | à faire |
 
 ## Licence
