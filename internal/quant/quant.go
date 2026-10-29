@@ -13,10 +13,12 @@
 //
 // Two deliberate non-features:
 //
-//   - No dithering. Error diffusion injects high-frequency noise, and noise
-//     vectorises catastrophically: thousands of one-pixel contours. For flat
-//     regions it is also simply wrong. Dither-then-trace is a disaster; trace
-//     the quantised image instead.
+//   - No dithering. Measured, not assumed: on the two corpus photographs,
+//     Floyd-Steinberg before tracing multiplies contours by 8 to 11 and nodes
+//     by 2.1 to 3.5, or 6.9 to 9.3 once curves are fitted, for 1.4 to 5.1 times
+//     less palette error. The noise is exactly what the tracer would spend its
+//     nodes on. On flat art it is inert, and the curve path erases it. Trace
+//     the quantised image instead; see docs/phase2.md.
 //   - No alpha in the palette. Alpha is carried per shape (fill-opacity), not as
 //     a fourth palette dimension, which would multiply k by the number of alpha
 //     levels for no benefit.

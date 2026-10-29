@@ -271,6 +271,35 @@ tests. Ce qui reste de son passage, ce sont deux leçons d'implémentation :
   `TestThinDistinctColourKeepsItsEntry` garde la ligne d'un pixel dans la palette
   et laisse l'encodeur décider.
 
+### Le tramage, mesuré et refusé
+
+`docs/reflexion.md` §4.2 interdit le tramage avant vectorisation sans chiffrer
+« catastrophique ». On a mesuré, sur le corpus, en comparant la même palette
+`k` : affectation au plus proche contre diffusion d'erreur de Floyd-Steinberg
+en OKLab, les deux tracés par le même encodeur. L'erreur est celle de l'index de
+palette (RMSE OKLab, proxy), pas le score rendu.
+
+| cas | k | nœuds lignes | nœuds courbes | boucles | erreur palette |
+|--|--:|--:|--:|--:|--:|
+| `photo/tux` | 8 | 2,1× | 6,9× | 8,4× | ÷5,1 |
+| `photo/tux` | 16 | 2,5× | 7,5× | 9,2× | ÷4,9 |
+| `photo/des` | 8 | 3,5× | 9,3× | 10,8× | ÷1,4 |
+| `photo/des` | 16 | 2,7× | 7,1× | 8,3× | ÷1,7 |
+
+Sur l'art plat (`synthetic/diag-stripes`, `synthetic/tri-blade`,
+`pixelart/blob`), le tramage ne change rien : la palette reproduit déjà les
+couleurs, et le chemin courbé efface le bruit (1,0×). Sur `logo/mark` il est
+même un peu moins cher avec les courbes (0,7 à 0,8×).
+
+La conclusion n'est pas « le tramage coûte 1 000× », c'est qu'il dépense les
+nœuds là où le projet ne veut pas les mettre : les boucles explosent de 8 à 11×.
+Le chemin courbé seul divise les nœuds par 4 à 7, mais appliqué au tramage il
+reste 6,9 à 9,3× au-dessus de sa propre base, soit **1,8 à 3,1× le tracé lignes
+sans tramage**. Le gain de fidélité est réel sur les photos, mais il s'achète au
+prix que D6 interdit. Aucun mode n'est ajouté ; le refus est désormais mesuré, et
+pourra être rouvert si un usage demande explicitement la fidélité couleur au
+détriment du budget de nœuds.
+
 ### Ce que ça a changé
 
 | cas | points avant / après | ΔdE |
@@ -930,4 +959,8 @@ en dégradant l'image jusqu'à l'absurde.
    fusion de `prune` sur les 33 cas comme sur un degrade synthetique, donc il a
    ete supprime. Le corpus est a la borne basse de la fourchette ; l'etendre
    encore donnerait a `ui/panel` le poids d'un cas reel et non d'un seul exemple.
-4. Puis seulement : grain / tramage, et l'axe video de D1.
+4. **Grain / tramage** : ~~mesurer~~ **refusé, mesuré** — avant tracé, le
+   tramage multiplie les boucles par 8 à 11 et les nœuds par 2,1 à 3,5 (6,9 à
+   9,3 avec les courbes) sur les photos, pour 1,4 à 5,1× moins d'erreur de
+   palette ; inerte sur l'art plat. Aucun mode ajouté.
+5. L'axe vidéo de D1.
