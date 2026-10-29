@@ -153,10 +153,12 @@ le fait qu'elle existe en deux endroits.
 ## Le corpus, et ce qu'il a révélé immédiatement
 
 `assets/png` ne contient que deux photos, et la Phase 1 l'avait déjà établi :
-elles ne sont pas la cible. Sans corpus, le traceur était évalué sur la seule
-chose où il est structurellement mauvais, et chaque décision prise sur cette base
-—allocation de palette, tolérance, politique de coins — était une extrapolation
-non testée.
+elles ne sont pas la cible. Elles ont d'abord été laissées hors du corpus, et ce
+fut une **erreur de mesure** : sans contenu photographique, chaque ratio publié
+décrivait de l'art plat, où le traceur est avantagé. Les deux photos sont
+désormais les cas `photo/des` et `photo/tux`, non pas comme cible mais comme
+borne : c'est le contenu le plus dur, et il faut savoir ce que le mode y vaut
+plutôt que de l'extrapoler.
 
 Le corpus est dans `testdata/corpus/<categorie>/<nom>.svg` + `<nom>.png`, avec
 `make corpus-render` pour régénérer les rasters depuis les SVG. Les SVG sont
@@ -165,6 +167,10 @@ un désaccord entre les deux est un bug du harness et non une tolérance à
 documenter. Vérifié : `embed` rejoue chaque raster à l'identique (AE=0), sauf
 `alpha/badge` — attendu, `embed` ne porte qu'un seul rectangle, et c'est
 précisément le cas que `trace` doit rendre via `fill-opacity`.
+
+Les deux cas `photo/` sont la seule exception : ils n'ont pas de SVG source, le
+PNG **est** la source, et `make corpus-render` les ignore puisqu'il ne rend que
+les `.svg`. C'est la catégorie `photo` que `CORPUS_CATS` prévoyait déjà.
 
 | cas | ce qu'il teste |
 |---|---|
@@ -175,6 +181,8 @@ précisément le cas que `trace` doit rendre via `fill-opacity`.
 | `lineart/glyph` | traits minces à fort contraste |
 | `pixelart/blob` | aligné sur la grille de pixels, aucun antialiasing |
 | `alpha/badge` | semi-transparence : 53 % de l'image en alpha nul |
+| `photo/des` | photographie 800×600, 89 060 couleurs : la borne du rendu fidèle |
+| `photo/tux` | photographie 386×395, 12 832 couleurs : le cas où le plafond ne peut pas mordre |
 
 Le premier résultat a été le plus mauvais score de tout le projet :
 `alpha/badge` à 0,5485, **pire que `grid`**, et vingt fois pire que `runlength`.
@@ -527,19 +535,21 @@ nécessaire. Sa légère dégradation sur l'ancien corpus est donc une perte sè
 Une seule mesure ne permet pas de trancher : `-curve-simplify` et `-curve-tol` sont
 deux réglages et le corpus n'en montrait qu'un point. Balayé sur les treize cas au
 point de réglage du corpus (`k=16`, `-tol 0.25`, `-max-nodes 20000`), `curve-tol`
-fixé à 0,4 :
+fixé à 0,4, nœuds **émis** :
 
 | `-curve-simplify` | nœuds (13 cas) | ratio | Δscore moyen | Δssim moyen | pire Δssim |
 |---|--:|--:|--:|--:|--:|
-| 0,75 | 18 378 | 3,6× | +0,0121 | −0,0092 | −0,0319 |
-| 1 | 9 989 | 6,6× | +0,0102 | −0,0074 | −0,0274 |
-| **1,5** | **6 435** | **10,2×** | **+0,0103** | **−0,0083** | **−0,0263** |
-| 2 | 5 746 | 11,4× | +0,0162 | −0,0127 | −0,0556 |
-| 3 | 5 145 | 12,8× | +0,0196 | −0,0146 | −0,0569 |
+| 0,75 | 9 862 | 6,6× | +0,0121 | −0,0092 | −0,0319 |
+| 1 | 5 798 | 11,3× | +0,0102 | −0,0074 | −0,0274 |
+| **1,5** | **4 199** | **15,6×** | **+0,0103** | **−0,0083** | **−0,0263** |
+| 2 | 3 905 | 16,8× | +0,0162 | −0,0127 | −0,0556 |
+| 3 | 3 574 | 18,3× | +0,0196 | −0,0146 | −0,0569 |
 
-**1 est dominé par 1,5** : même coût de fidélité, 10,2× au lieu de 6,6×. Le défaut
-passe donc de 1 à 1,5. En dessous, le score monte plus vite que les nœuds ne
-baissent ; au-dessus, plus vite encore.
+**1 est dominé par 1,5** : même coût de fidélité, 15,6× au lieu de 11,3×. Le
+défaut passe donc de 1 à 1,5. En dessous, le score monte plus vite que les nœuds
+ne baissent ; au-dessus, plus vite encore. Ces ratios sont sur les nœuds émis ;
+une version antérieure de ce tableau donnait 10,2× parce qu'elle comptait les
+*points aplatis*, et l'erreur est la même que celle corrigée plus haut.
 
 Il n'existe **aucun réglage gratuit**. 4 cas sur 13 ne perdent rien à un réglage
 quelconque, les 9 autres paient. À 1,5, en nœuds :
@@ -772,13 +782,15 @@ travail de l'encodeur est de minimiser la taille sous les contraintes. Ne pas
 utiliser tout le budget n'est pas un defaut, c'est le but : chaque noeud non
 employe est un noeud qui ne coute rien en octets. Ce que le tableau dit
 vraiment, c'est qu'a `-tol 0,25` la fidelite est deja bonne et la taille
-minimale, et que `-max-nodes` n'a aucun mordant sur ce corpus, sauf sur
-`logo/mark`, le seul cas a depasser 20 000 points au point de reglage.
+minimale, et que `-max-nodes` n'a aucun mordant sur les treize cas d'art plat,
+sauf sur `logo/mark`, le seul a depasser 20 000 points au point de reglage. Sur
+une photographie le plafond ne mord pas non plus, mais pour la raison inverse :
+il ne peut pas etre tenu, voir la section sur la photographie.
 
-### Deux erreurs de mesure de ma part
+### Trois erreurs de mesure de ma part
 
-Elles se ressemblent et il faut les nommer, parce qu'elles ont produit deux
-fausses conclusions_successives.
+Elles se ressemblent et il faut les nommer, parce qu'elles ont produit des
+fausses conclusions successives.
 
 1. `make ci` ne reconstruit pas `bin/`. Une comparaison a rendu un resultat
    identique au bit pres, j'en ai conclu « neutre », et il n'y avait rien a
@@ -790,8 +802,15 @@ fausses conclusions_successives.
    Le resultat est un tableau correct de la boucle, presente comme une
    propriete du curseur, avec un plateau et des inversions qui n'existent pas.
    Le tableau actuel, lui, est mesure sans plafond.
+3. J'ai melange deux compteurs dans un meme ratio. La colonne `points` de
+   `svgstat` est le pointage *aplati*, ce que verrait un rendu qui transforme
+   chaque courbe en petits segments ; ce n'est pas le nombre de noeuds emis, qui
+   est la grandeur de D6. Sur un path courbe les deux different de 1,7x a 2,1x
+   selon le dessin, assez pour transformer 15,6x en 10,2x sans qu'aucune ligne
+   de calcul ne soit fausse. Un ratio lignes/courbes ne se prend que sur la
+   colonne `nodes` de `svgimg`, celle que `-max-nodes` mesure.
 
-Les deux ont la meme cause : croire la sortie et la reconstruire. Le
+Les trois ont la meme cause : croire la sortie et la reconstruire. Le
 controle qui manque est de relire ce que la commande a reellement imprime —
 `res.Tolerance` dit ici 5,2525 px pour une tolerance demandee de 0,15, ce qui
  aurait du etre le signal depuis le debut.
@@ -801,8 +820,8 @@ controle qui manque est de relire ce que la commande a reellement imprime —
 La question « `-curves` vaut-il 24× ou 5,9× ? » n'a pas de réponse sans dire le
 plafond. Le chemin courbé produit **4 199 nœuds quelle que soit la limite**,
 parce qu'il n'approche jamais un plafond serré ; le chemin lignes, lui, est
-dégradé de plus en plus à mesure que la limite descend. Treize cas, `k=16`,
-`-tol 0,25` :
+dégradé de plus en plus à mesure que la limite descend. Treize cas **d'art plat**
+(les photos sont hors de ce tableau, voir plus bas), `k=16`, `-tol 0,25` :
 
 | plafond | lignes | courbes | ratio | cas où la boucle a escaladé |
 |--:|--:|--:|--:|--:|
@@ -828,13 +847,50 @@ même dans les trois cas, environ +0,008 à +0,010 de RMSE. La décision dépend
 donc du budget que le programme s'autorise, et cette question-là n'est pas
 technique.
 
-Les deux protocoles sont donc complements, pas concurrents. Sans plafond : 24,0×
-sur 154 243 → 6 435 nœuds, Δscore moyen +0,0103, pire cas +0,0274 sur
-`logo/mark`, meilleur −0,0001 sur `synthetic/arrow`, donc du bruit. Avec un
-plafond de 4 000 : 5,9× sur 24 656 → 4 199, Δscore moyen +0,0079. Le protocole
-bridé flatte la ligne, parce qu'il la dégrade, donc il sous-estime le mode. Le
-protocole libre est le bon pour « combien de nœuds coûte ce mode », le bridé est
-le bon pour « à budget fixé, qui est le plus fidèle ».
+Les deux protocoles sont donc compléments, pas concurrents. Sans plafond, sur le
+compteur de D6 — les nœuds émis : 36,7× sur 153 925 → 4 199 pour les treize cas
+d'art plat, Δscore moyen +0,0103, pire cas +0,0274 sur `logo/mark`, meilleur
+−0,0001 sur `synthetic/arrow`, donc du bruit. Avec un plafond de 4 000 : 5,9× sur
+24 656 → 4 199, Δscore moyen +0,0079. Le protocole bridé flatte la ligne, parce
+qu'il la dégrade, donc il sous-estime le mode. Le protocole libre est le bon pour
+« combien de nœuds coûte ce mode », le bridé est le bon pour « à budget fixé, qui
+est le plus fidèle ».
+
+Le 24,0× qui a circulé un moment venait du compteur de `svgstat`, dont la colonne
+`points` est le pointage *aplati* et non les nœuds émis : sur un path courbé elle
+donne 1,7× à 2,1× plus de points que de nœuds, et le facteur dépend du dessin.
+Les deux compteurs ne sont donc pas comparables, et seule la colonne `nodes` de
+`svgimg` — celle que `-max-nodes` mesure — peut porter un ratio lignes/courbes.
+`make corpus-bench` nomme désormais la sienne `points (aplatis)` pour que la
+confusion ne se refasse pas.
+
+### La photographie change le chiffre, et casse le plafond
+
+Les treize cas d'art plat donnaient 36,7× sans plafond. Les deux photographies,
+à tolérance égale et sans plafond, donnent :
+
+| cas | lignes | courbes | ratio | Δscore |
+|---|--:|--:|--:|--:|
+| `photo/des` 800×600 | 157 014 | 36 829 | 4,3× | +0,0061 |
+| `photo/tux` 386×395 | 99 206 | 18 363 | 5,4× | +0,0174 |
+
+Le corpus complet, quinze cas : 410 145 → 59 391, soit **6,9×**. Le 36,7× était
+donc un artefact d'un corpus sans contenu photographique, et il ne faut pas le
+citer comme le gain du mode.
+
+Plus grave pour D6 : **le plafond de nœuds ne peut pas mordre sur une photo.**
+À `-max-nodes 4000`, `des.png` escalade la tolérance de 0,25 à **1 838,97** — le
+domaine OKLab entier vaut 1,0 — et rend quand même **114 218** nœuds, vingt-huit
+fois le plafond ; `tux.png` monte à 263,50 et rend 32 464. La cause n'est pas
+l'échantillonnage des bords mais le **nombre de régions** : quantifier une photo
+en 16 couleurs laisse 7 806 boucles à tracer, et chaque boucle coûte des nœuds
+quoi qu'on fasse de la tolérance. Le chemin courbé ne fait pas mieux (36 829 sur
+`des`), il est seulement trois fois plus économe.
+
+La bibliothèque ne cache pas l'échec : elle affiche `status OVER the node budget`
+et une note qui donne le compte et la tolérance atteinte. C'est le bon
+comportement — un plafond qu'on ne peut pas tenir doit être signalé, pas obtenu
+en dégradant l'image jusqu'à l'absurde.
 
 ## Suite
 
@@ -845,14 +901,15 @@ le bon pour « à budget fixé, qui est le plus fidèle ».
    generale, c'est un mode qui compte quand le budget de noeuds est large. Le cout
    est constant, environ 0,01 de RMSE. Reste a decider si le defaut reste le chemin
    lignes et si le mode se documente par cette courbe ou par un seuil, et a quel
-   seuil. Le corpus est toujours mince sur le contenu, six des treize cas etant
-   ecrits pour le test.
+   seuil. Le corpus reste mince sur le contenu : six des quinze cas sont
+   synthetiques, et les deux photographies sont desormais la borne dure.
 2. ~~Un test qui verifie les lois d'echelle.~~ **Fait** :
    `TestLineNodesScaleWithResolutionAndCurveNodesDoNot`, qui synthetise ses
    rasters, ne depend ni d'inkscape ni d'un image de plus, et ne fige que
    l'ecart entre les exposants, pas l'exposant lui-meme.
 3. **Etendre le corpus** vers les 30 a 60 cas prevus, ce qui decide notamment du
    sort de `prune` et donnerait a `ui/panel` le poids d'un cas reel et non d'un
-   seul exemple. C'est le seul point de la Suite qui demande du travail humain
-   et non une mesure de plus.
+   seul exemple. La lacune photographique est comblee, mais quinze cas restent
+   trop peu pour trancher `prune`. C'est le seul point de la Suite qui demande du
+   travail humain et non une mesure de plus.
 4. Puis seulement : grain / tramage, et l'axe video de D1.

@@ -194,12 +194,21 @@ go run ./cmd/svgstat <sortie.svg> --ref <raster.png> -bg white
 #   courbes  4 199  4 199  4 199  4 199  4 199  4 199  4 199
 #   rapport  1,0×   1,8×   2,7×   5,9×  11,1×  15,6×  36,7×
 #
+# Ces 36,7× ne valent que pour de l'art plat. Les deux photographies du corpus,
+# `photo/des` et `photo/tux`, ne donnent que 4,3× et 5,4× à tolérance égale, et le
+# corpus complet tombe de 36,7× à 6,9× : le rapport moyen était un artefact d'un
+# corpus sans contenu photographique. Le plafond de nœuds ne peut de plus pas
+# mordre sur une photo : à `-max-nodes 4000`, `des.png` fait monter la tolérance
+# de 0,25 à 1 839 et rend quand même 114 218 nœuds, parce que le compte y est
+# dominé par le nombre de régions et pas par l'échantillonnage des bords. La
+# commande le dit (`status OVER the node budget`) au lieu de tricher.
+#
 # Le mode ne sert donc à rien si le budget de nœuds est serré : à 500 nœuds par
 # cas, les deux modes rendent le même compte et c'est le plafond qui décide, pas
-# le mode. Il sert quand le budget est large. -curve-simplify règle le premier
-# geste, l'effacement de la marche de tracé avant ajustement, -curve-tol le
-# second, l'écart entre la courbe ajustée et les points d'origine. Voir
-# docs/phase2.md avant de s'en servir.
+# le mode. Il sert quand le budget est large, et surtout sur de l'art plat.
+# -curve-simplify règle le premier geste, l'effacement de la marche de tracé
+# avant ajustement, -curve-tol le second, l'écart entre la courbe ajustée et les
+# points d'origine. Voir docs/phase2.md avant de s'en servir.
 go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <sortie.svg>
 ```
 
@@ -207,10 +216,10 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <so
 
 | phase | contenu | état |
 |---|---|---|
-| 0 | instrument de mesure | **fait** — corpus de 7 cas dans `testdata/corpus/<cat>/<nom>.{svg,png}`, mesuré dans [docs/corpus-bench.md](docs/corpus-bench.md) |
+| 0 | instrument de mesure | **fait** — corpus de 15 cas (dont 2 photographies) dans `testdata/corpus/<cat>/<nom>.{svg,png}`, mesuré dans [docs/corpus-bench.md](docs/corpus-bench.md) |
 | 1 | baselines (encapsulation, grille, run-length) | **fait** — mesuré sur `assets/png`, voir [docs/phase1.md](docs/phase1.md) |
 | 2 | traceur de contours — le cœur | **fait** — 4 à 17 éléments DOM au lieu de 68 à 2 247 sur le corpus, voir [docs/phase2.md](docs/phase2.md) |
-| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,1× à 68,4× de nœuds contre ~0,01 de score. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500. Voir [docs/phase2.md](docs/phase2.md) |
+| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,1× à 68,4× de nœuds contre ~0,01 de score sur l'art plat, mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 6,9× sur les quinze cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
 | 3 | modes (pixel art, screenshot+texte, trait, photo) | à faire |
 | 4 | sémantique, accessibilité, IDs stables | à faire |
 | 5 | vidéo (tracking, delta, animation par transformation) | à faire |
