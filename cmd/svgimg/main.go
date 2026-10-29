@@ -64,8 +64,8 @@ func main() {
 		// cases give only 4x to 5x and their node count cannot be clamped at all,
 		// because it is dominated by the number of regions, not by edge sampling.
 		// See docs/phase2.md.
-		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase. Costs ~0.01 RMSE OKLab and saves 2x to 104x of nodes outside photographs, 4x to 5x on photographs, and only if the node budget is loose: at -max-nodes 500 it saves nothing")
-		curveTol  = flag.Float64("curve-tol", 0.5, "for trace: largest distance in px between a fitted curve and the points it was fitted from")
+		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase. Off by default because it costs fidelity when no node budget forces it (~0.02 RMSE OKLab on average outside photographs, up to ~0.06). Saves 2x to 104x of nodes outside photographs and 4x to 5x on them; inert below -max-nodes 1000, pays from about 4000")
+		curveTol  = flag.Float64("curve-tol", 0.4, "for trace: largest distance in px between a fitted curve and the points it was fitted from (the corpus protocol; the fitter's own default is 0.5)")
 		curveSimp = flag.Float64("curve-simplify", 0, "for trace -curves: simplification tolerance in px that strips the tracing staircase before fitting (default 1.5)")
 	)
 	flag.Parse()

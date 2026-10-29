@@ -633,20 +633,22 @@ honnête du mode : il n'est pas gratuit, même face à un adversaire dégradé.
 
 Compte tenu de D6, la lecture d'ensemble est favorable : la contrainte dure est le
 nombre de nœuds parce qu'elle ne se comprime pas, et sur cette contrainte le gain
-va de 2,4× à 104,2× hors photographie, pour environ 0,01 de RMSE OKLab ; sur les
-deux photographies il tombe à 4,3× et 5,4×. `-curves` reste **désactivé par
-défaut** tant que la décision n'est pas prise explicitement, mais ce n'est plus
-« ne pas activer » par prudence, c'est « activer ou non, sur des chiffres ».
+va de 2,4× à 104,2× hors photographie, pour +0,0193 de RMSE OKLab en moyenne
+(pire +0,0596, meilleur −0,0147) ; sur les deux photographies il tombe à 4,3× et
+5,4×. La décision est prise : `-curves` reste **désactivé par défaut**, et se
+documente par cette courbe, pas par un seuil (voir plus bas).
 
 Les deux photographies, désormais cas du corpus, sont traitées en détail plus
 bas. En nœuds émis à `k=16`, elles échangent 157 014 → 36 829 (4,3×) et
 99 206 → 18 363 (5,4×) contre +0,006 et +0,017 de score, et surtout leur plafond
 de nœuds ne peut pas être tenu.
 
-`-curves` reste **désactivé par défaut** : c'est un arbitrage, pas un gain franc, et
-un mode qui dégrade la fidélité en silence n'a pas sa place dans un défaut. Il se
-règle maintenant explicitement, et l'amplitude du gain dépend de la forme : c'est le
-premier mode où le contenu décide vraiment du résultat.
+La raison du défaut est mesurée, pas prudente. `-max-nodes` vaut 0 par défaut,
+donc aucun budget ne presse ; dans ce régime le mode coûte de la fidélité sur 28
+des 31 cas hors photographie, et un mode qui dégrade la fidélité en silence n'a
+pas sa place dans un défaut. Il s'active explicitement, et l'amplitude du gain
+dépend de la forme : c'est le premier mode où le contenu décide vraiment du
+résultat.
 
 Ce que cela dit du contenu tient toujours : `pixelart/blob` reste l'argument le
 plus fort en faveur des Béziers, `grid` le restituant exactement (ssim 1,0000)
@@ -814,7 +816,8 @@ La question « `-curves` vaut-il 24× ou 5,9× ? » n'a pas de réponse sans dir
 plafond. Le chemin courbé produit **4 199 nœuds quelle que soit la limite**,
 parce qu'il n'approche jamais un plafond serré ; le chemin lignes, lui, est
 dégradé de plus en plus à mesure que la limite descend. Treize cas **d'art plat**
-(les photos sont hors de ce tableau, voir plus bas), `k=16`, `-tol 0,25` :
+(les photos sont hors de ce tableau, voir plus bas), `k=16`, `-tol 0,25`,
+`-curve-tol 0,4` (le défaut de la CLI) :
 
 | plafond | lignes | courbes | ratio | cas où la boucle a escaladé |
 |--:|--:|--:|--:|--:|
@@ -836,9 +839,10 @@ davantage, et le chemin lignes a été désarmé jusqu'au même compte.
 C'est la réponse à la question de la Suite, et elle n'est pas « oui ou non » :
 `-curves` est pertinent à D6 = 20 000 où il rend 15,6×, il est encore utile à
 4 000 où il rend 5,9×, et il est **inert en dessous de 1 000**. Le coût reste le
-même dans les trois cas, environ +0,008 à +0,010 de RMSE. La décision dépend
-donc du budget que le programme s'autorise, et cette question-là n'est pas
-technique.
+même dans les trois régimes, environ +0,008 à +0,010 de RMSE sur ces treize
+cas. L'intérêt du mode dépend donc du budget que le programme s'autorise, et
+cette question-là n'est pas technique ; le défaut du projet, lui, est tranché
+plus bas.
 
 Les deux protocoles sont donc compléments, pas concurrents. Sans plafond, sur le
 compteur de D6 — les nœuds émis : **29,3×** sur 169 538 → 5 781 pour les trente et
@@ -860,6 +864,22 @@ Les deux compteurs ne sont donc pas comparables, et seule la colonne `nodes` de
 `svgimg` — celle que `-max-nodes` mesure — peut porter un ratio lignes/courbes.
 `make corpus-bench` nomme désormais la sienne `points (aplatis)` pour que la
 confusion ne se refasse pas.
+
+#### Décision : défaut lignes, documentation par la courbe
+
+Le défaut reste le chemin lignes, et le mode ne s'active pas tout seul quand un
+plafond est posé. Un seuil d'activation serait une fausse précision : le rapport
+est continu en fonction du plafond (1,0× à 500, 5,9× à 4 000, 15,6× à 20 000) et
+dépend du contenu, donc aucun nombre unique ne dit « activez ici ». Ce qu'on peut
+dire sans se tromper, c'est que **sous 1 000 nœuds le mode est inerte** et qu'il
+commence à payer vers 4 000. La documentation montre donc la courbe et laisse
+l'appelant choisir son budget ; les photographies, elles, restent hors de portée
+quel que soit le plafond.
+
+L'activation automatique aurait un second défaut : elle changerait la fidélité
+sans le dire, au moment précis où la boucle de budget escalade déjà la tolérance.
+Le mode reste un opt-in explicite, et `-max-nodes 0` (le défaut) est le régime où
+il ne faut pas l'activer.
 
 ### La photographie change le chiffre, et casse le plafond
 
@@ -892,15 +912,15 @@ en dégradant l'image jusqu'à l'absurde.
 
 ## Suite
 
-1. **Documenter `-curves` par sa courbe, pas par un oui ou non.** La question est
-   tranchee : le mode rend 15,6× a un plafond de 20 000 noeuds, 5,9× a 4 000, et
-   1,0× a 500, parce que le chemin courbe rend toujours 4 199 noeuds et que la
-   ligne, elle, est degradee jusqu'au plafond. Ce n'est pas une compression
-   generale, c'est un mode qui compte quand le budget de noeuds est large. Le cout
-   est constant, environ 0,01 de RMSE. Reste a decider si le defaut reste le chemin
-   lignes et si le mode se documente par cette courbe ou par un seuil, et a quel
-   seuil. Le corpus reste mince sur le contenu : six des trente-trois cas sont
-   synthetiques, et les deux photographies sont desormais la borne dure.
+1. ~~Documenter `-curves` par sa courbe, pas par un oui ou non.~~ **Fait, décision
+   prise** : le mode rend 15,6× à un plafond de 20 000 nœuds, 5,9× à 4 000 et 1,0×
+   à 500, parce que le chemin courbé rend toujours 4 199 nœuds et que la ligne est
+   dégradée jusqu'au plafond. Il reste désactivé par défaut, sans activation
+   automatique : le rapport est continu en fonction du plafond, donc un seuil
+   serait une fausse précision ; il est inerte sous 1 000 nœuds et commence à
+   payer vers 4 000, pour +0,0193 de RMSE en moyenne sur les 31 cas hors photo
+   (pire +0,0596). Le corpus reste mince sur le contenu : six des trente-trois cas
+   sont synthétiques, et les deux photographies sont la borne dure.
 2. ~~Un test qui verifie les lois d'echelle.~~ **Fait** :
    `TestLineNodesScaleWithResolutionAndCurveNodesDoNot`, qui synthetise ses
    rasters, ne depend ni d'inkscape ni d'un image de plus, et ne fige que
