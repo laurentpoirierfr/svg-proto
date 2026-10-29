@@ -222,7 +222,7 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <so
 | 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,4× à 104,2× de nœuds contre +0,0193 de score en moyenne hors photographie (jusqu'à +0,06), mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 7,0× sur les trente-trois cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
 | 3 | modes (pixel art, screenshot+texte, trait, photo) | à faire |
 | 4 | sémantique, accessibilité, IDs stables | à faire |
-| 5 | vidéo (tracking, delta, animation par transformation) | à faire |
+| 5 | vidéo (tracking, delta, animation par transformation) | **mesuré, à faire** — clé+delta vaut 7 à 8× sur une UI complexe majoritairement statique (2,2 % de pixels changés), mais perd face aux courbes quand tout bouge ; voir [docs/plan.md](docs/plan.md) |
 | 6 | outillage (CLIs, WASM, CI, docs) | à faire |
 
 ## Licence
