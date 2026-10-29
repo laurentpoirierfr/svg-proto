@@ -261,6 +261,42 @@ func TestNodeBudgetIsRespectedByRaisingTheTolerance(t *testing.T) {
 	}
 }
 
+func TestUnmeetableNodeBudgetIsReportedNotHidden(t *testing.T) {
+	// A field of speckle has more regions than any tolerance can merge under a
+	// budget of a few dozen nodes: the count is set by the number of regions,
+	// not by how finely their edges are sampled. The encoder must return the
+	// document it built and say it is over budget. A nil result would read as a
+	// bug, and an over-budget result reported as clean would be a lie.
+	im, pal := solid(96, 96, func(x, y int) color.RGBA {
+		h := uint32(x)*2654435761 + uint32(y)*40503
+		return color.RGBA{uint8(h), uint8(h >> 8), uint8(h >> 16), 255}
+	})
+	const budget = 25
+	res := encodeOrFail(t, im, pal, Options{MaxNodes: budget})
+	if !res.Truncated {
+		t.Fatalf("budget %d with %d nodes is not reported as truncated", budget, res.Nodes)
+	}
+	if res.Nodes <= budget {
+		t.Fatalf("truncated at %d nodes, within the budget of %d", res.Nodes, budget)
+	}
+	if res.Tolerance <= 0.25 {
+		t.Errorf("tolerance stayed at %v: the budget was never applied", res.Tolerance)
+	}
+	want := "node budget " + strconv.Itoa(budget) + " exceeded: " + strconv.Itoa(res.Nodes) + " nodes"
+	found := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no note says %q: %q", want, res.Notes)
+	}
+	if res.Doc == nil || res.Doc.Root == nil || len(res.Doc.Root.Children) == 0 {
+		t.Error("truncated result returned no document")
+	}
+}
+
 func TestMinAreaDropsSlivers(t *testing.T) {
 	// A one-pixel dot is not worth a path node, and at a realistic MinArea it must
 	// disappear entirely.
