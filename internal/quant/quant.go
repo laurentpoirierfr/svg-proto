@@ -61,9 +61,6 @@ type Palette struct {
 	// is a useful diagnostic: the ratio Cells/K says how much structure the
 	// budget is fighting.
 	Cells int
-	// Merged counts palette entries that prune folded into a neighbour because
-	// they carried too little of the image to deserve a slot.
-	Merged int
 	// Rejected counts pixels excluded by AlphaFloor.
 	Rejected int
 }
@@ -91,11 +88,6 @@ type Options struct {
 	// Weighted alpha-weights the histogram. A semi-transparent pixel should
 	// influence the palette less than an opaque one.
 	Weighted bool
-	// MergeDelta is the OKLab distance below which two palette entries are
-	// treated as the same colour, and the nearer one absorbs the other. It makes
-	// K an upper bound rather than a target. Zero disables merging, which is only
-	// interesting for reproducing the failure it fixes.
-	MergeDelta float64
 }
 
 // MinSplitPixels is the smallest box medianCut will split: a box holding fewer
@@ -110,25 +102,9 @@ type Options struct {
 // and neither can do the other's job.
 const MinSplitPixels = 64
 
-// DefaultMergeDelta is the default for Options.MergeDelta, as a distance in the
-// L-weighted metric 3*dL^2 + da^2 + db^2.
-//
-// The threshold is a redundancy test, not an area test, and the distinction is
-// the whole point. An area threshold cannot tell a one-pixel antialiasing
-// artefact from a one-pixel logo mark: they weigh the same, so whichever way it
-// goes it is wrong for one of them. A colour threshold tells them apart without
-// being told which is which, because an antialiasing artefact is by definition
-// very close to the colour it fringes while a mark has a colour of its own.
-//
-// 0.02 sits just above the OKLab just-noticeable difference, so an entry is
-// dropped only when folding it into its neighbour is imperceptible rather than
-// merely small.
-const DefaultMergeDelta = 0.02
-
-// Default returns a sensible reduction: 16 colours, alpha-weighted, with
-// visually redundant entries merged.
+// Default returns a sensible reduction: 16 colours, alpha-weighted.
 func Default() Options {
-	return Options{K: 16, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true, MergeDelta: DefaultMergeDelta}
+	return Options{K: 16, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true}
 }
 
 type cell struct {
@@ -213,10 +189,9 @@ func Reduce(in *Input, opts Options) *Palette {
 		}
 	}
 	boxes := medianCut(live, cells, opts.K)
-	boxes, merged := prune(boxes, cells, opts.MergeDelta)
 
 	pal := &Palette{
-		W: in.W, H: in.H, Cells: nonEmpty, Merged: merged,
+		W: in.W, H: in.H, Cells: nonEmpty,
 		Index:  make([]uint16, in.N()),
 		Colors: make([]uint8, 0, 4*len(boxes)),
 	}
@@ -340,127 +315,6 @@ func medianCut(live []int, cells []cell, k int) [][]int {
 	}
 	return boxes
 }
-
-// prune merges away boxes that carry too little of the image to be worth a
-// palette entry, repeatedly, until every survivor is big enough or one is left.
-//
-// Median cut is an area-blind splitter, and on flat artwork that is not a
-// limitation, it is backwards. A hard-edged logo is a handful of large flat
-// areas plus a thin antialiased fringe along every edge. The flat areas land in
-// single histogram cells, so their boxes have zero extent and can never be the
-// best split, while the fringe is a chain of near-identical cells strung across
-// a wide lightness range and therefore always wins. Every split lands on the
-// fringe. K entries come out as two real colours and a ladder of greys, and on
-// testdata/corpus/alpha/badge.png that was 9 of 11 entries for 130 pixels out of
-// 7 744.
-//
-// Population weighting in volume does not fix it, and the reason is worth
-// recording: the flat colours rank at zero extent, so they are not merely losing
-// the comparison, they are not in it. There is no weighting that makes a box of
-// one cell worth splitting, because it is already exactly one colour.
-//
-// Merging afterwards is the only place the trade can be made honestly, because by
-// then the question is no longer "where to cut" but "is this entry worth its
-// slot". A box within MergeDelta of a neighbour is folded into it, repeatedly,
-// smallest first, until none is left that close to anything.
-//
-// The test is colour distance and not area share, and an area test was tried
-// first and is wrong in a way that reaches outside this package. Pruning by area
-// silently deletes small features, which is MinArea's job, and it does it in the
-// palette where the caller has no knob: a one-pixel white dot on black is 0.125%
-// of a 40x20 image, so an area rule folds it into black and the geometry-level
-// MinArea never sees a region to drop. Colour distance draws the line where the
-// eye does instead: that dot is nowhere near black, so it keeps its entry and
-// MinArea disposes of it exactly as configured.
-//
-// This never fires on the current corpus, and that is measured rather than
-// assumed: Merged is 0 on all seven corpus rasters and on both photos, at
-// MergeDelta 0.02 and at 0. The split floor already refuses to create the small
-// box this would clean up. It is kept as a net because the corpus holds 7 cases
-// where the plan calls for 30 to 60, and "never seen in seven" is not "never".
-// See docs/phase2.md, section "prune ne fait rien, et c'est mesure".
-func prune(boxes [][]int, cells []cell, delta float64) (kept [][]int, merged int) {
-	if delta <= 0 || len(boxes) < 2 {
-		return boxes, 0
-	}
-	alive := make([]bool, len(boxes))
-	mass := make([]float64, len(boxes))
-	rep := make([][3]float64, len(boxes))
-	for i, b := range boxes {
-		alive[i] = true
-		var sL, sA, sB, sW float64
-		for _, ci := range b {
-			c := &cells[ci]
-			sL += c.sumL
-			sA += c.sumA
-			sB += c.sumB
-			sW += c.nAlpha
-		}
-		mass[i] = sW
-		if sW > 0 {
-			rep[i] = [3]float64{sL / sW, sA / sW, sB / sW}
-		}
-	}
-	// Smallest first, so a run of near-identical entries collapses towards its
-	// largest neighbour instead of each pairing off with the next one along.
-	for {
-		victim, best, bestD := -1, -1, delta*delta
-		for i := range boxes {
-			if !alive[i] {
-				continue
-			}
-			near, nearD := -1, math.Inf(1)
-			for j := range boxes {
-				if !alive[j] || j == i {
-					continue
-				}
-				if d := dist(rep[i], rep[j]); d < nearD {
-					nearD, near = d, j
-				}
-			}
-			// A box with no neighbour within delta is a real colour: keep it.
-			if near < 0 || nearD > bestD {
-				continue
-			}
-			if victim < 0 || mass[i] < mass[victim] || (mass[i] == mass[victim] && nearD < bestD) {
-				victim, best, bestD = i, near, nearD
-			}
-		}
-		if victim < 0 {
-			break
-		}
-		// Copy rather than append in place. Every box median cut produced is a
-		// sub-slice of one shared array, so appending to one of them can
-		// overwrite a neighbour's cells, and the symptom is a colour that
-		// silently absorbs another one: on alpha/badge the red square turned navy
-		// because its box was clobbered. Bisect's b[:h] / b[h:] halves are
-		// adjacent views of the same array, so this is the likely case, not a
-		// remote one.
-		joined := make([]int, 0, len(boxes[best])+len(boxes[victim]))
-		joined = append(joined, boxes[best]...)
-		joined = append(joined, boxes[victim]...)
-		boxes[best] = joined
-		mass[best] += mass[victim]
-		alive[victim] = false
-		merged++
-	}
-	kept = make([][]int, 0, len(boxes))
-	for i, b := range boxes {
-		if alive[i] {
-			kept = append(kept, b)
-		}
-	}
-	return kept, merged
-}
-
-// dist is the L-weighted squared OKLab distance, the same metric volume and
-// bisect rank by, so "too close to tell apart" means the same thing everywhere in
-// this file.
-func dist(x, y [3]float64) float64 {
-	return 3*sq(x[0]-y[0]) + sq(x[1]-y[1]) + sq(x[2]-y[2])
-}
-
-func sq(x float64) float64 { return x * x }
 
 // volume ranks how much a box still needs splitting. L is weighted up because
 // an error on lightness is far more visible than the same error on chroma, so

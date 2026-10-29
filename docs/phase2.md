@@ -239,51 +239,37 @@ le meilleur résultat du corpus. Un plancher purement absolu casse à l'autre
 extrémité : sur une image de 27 pixels dont les trois couleurs en font 9 chacune il
 bloque les splits et réduit trois couleurs à une.
 
-`K` devient donc un majorant et non une cible, et `Palette.Merged` rend le nombre
-de slots inutilisés observable au lieu de le laisser deviner.
+`K` devient donc un majorant et non une cible : une image à trois couleurs
+demandée à seize en rend trois, et `Palette.Len()` le dit sans qu'on ait à le
+deviner.
 
-### `prune` ne fait rien, et c'est mesuré
+### `prune` a été supprimé après mesure
 
-Un mécanisme de fusion par distance de couleur a été ajouté sur le même
-problème : après la coupe, deux boîtes dont les couleurs sont indiscernables
-plutôt que redondantes sont absorbées l'une dans l'autre. Il est resté **inactif
-sur les sept cas du corpus et sur les deux photos** — `Merged = 0` partout, avec
-`MergeDelta` à 0,02 comme à 0.
+Un mécanisme de fusion par distance de couleur avait été ajouté pour absorber
+les entrées de palette indiscernables plutôt que redondantes. Il n'a **jamais
+fusionné** : `Merged = 0` sur les sept cas d'origine, puis sur les trente-trois
+cas du corpus étendu, sur les deux photographies et sur un dégradé synthétique,
+à 0,02 comme à 0.
 
-Les deux mécanismes se ressemblent mais ne visent pas le même instant : le plancher
-.refuse de *créer* une petite boîte, `prune` supprime une petite boîte qui a
-survécu. Et ces survivantes existent bel et bien — la médiane coupe à mi-chemin,
-donc un enfant peut tomber sous le plancher alors que son parent était au-dessus :
-une boîte de 48 pixels issue d'un parent de 1000 est produite ainsi. La question
-n'est donc pas « le plancher a-t-il fonctionné » mais « la palette a-t-elle déjà
-produit des doublons ». Sur ce corpus, non.
+La mesure a aussi corrigé sa justification. Le problème qui l'avait motivé — la
+frange antialiasée de `alpha/badge` accaparant neuf entrées sur onze — n'était
+pas un problème de doublons : `Merged` y valait déjà 0, et c'est `MinSplitPixels`
+qui l'avait réglé. Et `Palette.Merged` ne mesurait pas les « slots inutilisés »
+(ceux-là valent `K - Len()`), il mesurait les fusions.
 
-Il est **gardé quand même**, pour une raison qui tient en un mot : le corpus. Il
-compte 7 cas là où le plan en prévoit 30 à 60, et « je ne l'ai pas vu se déclencher
-sept fois » n'est pas « il ne se déclenchera jamais ». Le garder coûte quarante
-lignes et un champ de plus ; le supprimer laisserait le budget de palette sans
-filet si une image hors corpus produisait enfin un doublon, et l'appelant n'aurait
-plus rien pour le rattraper.
+Il était donc le seul mécanisme du projet conservé sur une probabilité et non sur
+une mesure. Le corpus étant passé de 7 à 33 cas, la condition posée pour le
+rejuger était remplie : il a été **supprimé**, avec son champ `Merged` et ses
+tests. Ce qui reste de son passage, ce sont deux leçons d'implémentation :
 
-Il est donc documenté comme **filet non exercé**, explicitement, pour que personne
-ne lise le code et suppose qu'il porte une part du résultat. C'est le seul endroit
-du projet où un mécanisme est conservé sur une probabilité et non sur une mesure,
-et cela mérite d'être dit en toutes lettres.
-
-Deux bugs d'implémentation corrigés au passage, tous deux trouvés par la mesure :
-
-- `append` en place dans `prune` **écrasait** la boîte voisine. `bisect` renvoie
-  `b[:h]` et `b[h:]`, deux vues du même tableau, donc absorber une boîte dans une
-  autre détruisait la troisième. Symptôme : le carré rouge du badge virait au
-  bleu marine. `TestMergeDoesNotCorruptAdjacentBoxes` épingle l'invariant.
-- Un seuil fondé sur l'aire, essayé avant la distance de couleur, **volait le
-  travail de `MinArea`**: un point blanc d'un pixel sur 40×20 fait 0,125 % de
-  l'image, il était absorbé dans le noir au niveau de la palette et `MinArea`
-  n'avait plus de région à supprimer. Aucune règle d'aire ne peut distinguer une
-  marque d'un pixel d'un artefact d'un pixel : ils pèsent le même. La distance de
-  couleur les sépare sans savoir lequel est lequel, parce qu'un artefact
-  d'antialiasing est par définition très proche de la couleur qu'il borde, tandis
-  qu'une marque a une couleur propre.
+- `append` en place écrasait la boîte voisine. `bisect` renvoie `b[:h]` et
+  `b[h:]`, deux vues du même tableau ; absorber une boîte dans une autre
+  détruisait la troisième, et le carré rouge du badge virait au bleu marine.
+- Un seuil fondé sur l'aire volait le travail de `MinArea` : un point blanc d'un
+  pixel sur 40×20 pèse 0,125 % de l'image et était absorbé dans le noir au niveau
+  de la palette, avant que `MinArea` ne voie la région. C'est pourquoi
+  `TestThinDistinctColourKeepsItsEntry` garde la ligne d'un pixel dans la palette
+  et laisse l'encodeur décider.
 
 ### Ce que ça a changé
 
@@ -919,9 +905,9 @@ en dégradant l'image jusqu'à l'absurde.
    `TestLineNodesScaleWithResolutionAndCurveNodesDoNot`, qui synthetise ses
    rasters, ne depend ni d'inkscape ni d'un image de plus, et ne fige que
    l'ecart entre les exposants, pas l'exposant lui-meme.
-3. **Etendre le corpus** vers les 30 a 60 cas prevus, ce qui decide notamment du
-   sort de `prune` et donnerait a `ui/panel` le poids d'un cas reel et non d'un
-   seul exemple. La lacune photographique est comblee, mais trente-trois cas restent
-   trop peu pour trancher `prune`. C'est le seul point de la Suite qui demande du
-   travail humain et non une mesure de plus.
+3. ~~Etendre le corpus vers les 30 a 60 cas prevus.~~ **Fait, et `prune` est
+   tranche** : 33 cas, dont 18 icones tierces MIT et 2 photographies ; zero
+   fusion de `prune` sur les 33 cas comme sur un degrade synthetique, donc il a
+   ete supprime. Le corpus est a la borne basse de la fourchette ; l'etendre
+   encore donnerait a `ui/panel` le poids d'un cas reel et non d'un seul exemple.
 4. Puis seulement : grain / tramage, et l'axe video de D1.
