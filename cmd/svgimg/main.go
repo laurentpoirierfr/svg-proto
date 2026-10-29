@@ -7,7 +7,7 @@
 //	svgimg -in logo.png -out logo.svg -mode embed
 //	svgimg -in photo.png -out photo.svg -mode runlength -k 32 -max-nodes 20000
 //	svgimg -in logo.png -mode trace -k 8 -max-nodes 5000 -report
-//	svgimg -in logo.png -mode trace -k 8 -curves -curve-tol 0.4 -curve-simplify 1 -report
+//	svgimg -in logo.png -mode trace -k 8 -curves -curve-tol 0.4 -report
 //	svgimg -in a.png -mode grid -tile 16 -report
 //
 // Every run prints the same table, so the encoders are directly comparable.
@@ -55,7 +55,16 @@ func main() {
 		stdout    = flag.Bool("stdout", false, "write the SVG to stdout instead of a file")
 		prettyOut = flag.Bool("pretty", false, "indent the output")
 		bg        = flag.String("bg", "", "composite the source over this sRGB colour before vectorising (e.g. white, #f0f0f0); empty keeps the source alpha")
-		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase")
+		// The help says why, not just what. The saving is not a property of the
+		// mode: the curve path returns the same node count whatever -max-nodes
+		// says, because it never comes near a tight ceiling, while the line path
+		// is simplified until it does. So at 500 nodes per case both modes land
+		// on the same count and the ceiling decides, and the mode saves 15.6x at
+		// 20000. Measured on the thirteen flat-art corpus cases; the two photo
+		// cases give only 4x to 5x and their node count cannot be clamped at all,
+		// because it is dominated by the number of regions, not by edge sampling.
+		// See docs/phase2.md.
+		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase. Costs ~0.01 RMSE OKLab and saves 2x to 68x of nodes on flat art, 4x to 5x on photographs, and only if the node budget is loose: at -max-nodes 500 it saves nothing")
 		curveTol  = flag.Float64("curve-tol", 0.5, "for trace: largest distance in px between a fitted curve and the points it was fitted from")
 		curveSimp = flag.Float64("curve-simplify", 0, "for trace -curves: simplification tolerance in px that strips the tracing staircase before fitting (default 1.5)")
 	)

@@ -261,6 +261,42 @@ func TestNodeBudgetIsRespectedByRaisingTheTolerance(t *testing.T) {
 	}
 }
 
+func TestUnmeetableNodeBudgetIsReportedNotHidden(t *testing.T) {
+	// A field of speckle has more regions than any tolerance can merge under a
+	// budget of a few dozen nodes: the count is set by the number of regions,
+	// not by how finely their edges are sampled. The encoder must return the
+	// document it built and say it is over budget. A nil result would read as a
+	// bug, and an over-budget result reported as clean would be a lie.
+	im, pal := solid(96, 96, func(x, y int) color.RGBA {
+		h := uint32(x)*2654435761 + uint32(y)*40503
+		return color.RGBA{uint8(h), uint8(h >> 8), uint8(h >> 16), 255}
+	})
+	const budget = 25
+	res := encodeOrFail(t, im, pal, Options{MaxNodes: budget})
+	if !res.Truncated {
+		t.Fatalf("budget %d with %d nodes is not reported as truncated", budget, res.Nodes)
+	}
+	if res.Nodes <= budget {
+		t.Fatalf("truncated at %d nodes, within the budget of %d", res.Nodes, budget)
+	}
+	if res.Tolerance <= 0.25 {
+		t.Errorf("tolerance stayed at %v: the budget was never applied", res.Tolerance)
+	}
+	want := "node budget " + strconv.Itoa(budget) + " exceeded: " + strconv.Itoa(res.Nodes) + " nodes"
+	found := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no note says %q: %q", want, res.Notes)
+	}
+	if res.Doc == nil || res.Doc.Root == nil || len(res.Doc.Root.Children) == 0 {
+		t.Error("truncated result returned no document")
+	}
+}
+
 func TestMinAreaDropsSlivers(t *testing.T) {
 	// A one-pixel dot is not worth a path node, and at a realistic MinArea it must
 	// disappear entirely.
@@ -396,6 +432,76 @@ func TestAlphaLevelSnapping(t *testing.T) {
 // for. A rasterised circle traced by marching squares is a staircase, which makes
 // it the honest test: a fitter that only looks good on synthetic geometry would
 // not survive it.
+// The scaling behaviour is the only serious reason to offer -curves, and nothing
+// checks it.
+//
+// The line path emits a one pixel staircase, so its node count follows the
+// perimeter divided by the step of that staircase. Both grow with the raster, so
+// the quotient does not, and the line path is linear in resolution. The curve
+// path is sublinear: a fitted curve needs far fewer segments than the staircase it
+// replaces, and the fewer it needs the less the resolution matters. Hence the
+// ratio grows with the raster, which is the whole argument for the mode: it helps
+// more the larger the image is, not less.
+//
+// The exponent is left loose on purpose. Measured on the corpus, the logo follows
+// a square root closely, x1.00, x1.40, x1.87, x2.80 over x1, x2, x4, x8. A disc
+// does not: this test measures about 0.35. So 0.5 is a property of that drawing,
+// not a law, and what the mode needs is only that the line path is linear and
+// the curve path is not. Pinning the exponent would pin a coincidence.
+//
+// The rasters are synthesised here rather than read from the corpus, so the test
+// needs neither inkscape nor another image file. No node budget is set: a budget
+// makes the encoder escalate the tolerance until the document fits, which is how
+// two earlier versions of this measurement came to describe the budget loop
+// instead of the two paths.
+func TestLineNodesScaleWithResolutionAndCurveNodesDoNot(t *testing.T) {
+	const base = 64
+	const factor = 16
+
+	measure := func(size int, curves bool) int {
+		im, pal := disc(size, size, size*39/100, nil)
+		o := Options{Tolerance: 0.25, Curves: curves}
+		return encodeOrFail(t, im, pal, o.withDefaults()).Nodes
+	}
+
+	size := base * factor
+	lines, curves := measure(size, false), measure(size, true)
+	baseLines, baseCurves := measure(base, false), measure(base, true)
+
+	span := math.Log(factor)
+	lineExp := math.Log(float64(lines)/float64(baseLines)) / span
+	curveExp := math.Log(float64(curves)/float64(baseCurves)) / span
+
+	// The staircase makes the line path linear. If this fails, a node is no longer
+	// costing one pixel of boundary, and the reason to compare the two paths on
+	// node count is gone.
+	if lineExp < 0.85 {
+		t.Errorf("the line path grew by x%.0f over x%d, an exponent of %.2f, want about 1",
+			float64(lines)/float64(baseLines), factor, lineExp)
+	}
+	// The curve path must stay well under the line path's exponent, and the gap is
+	// the whole point: it is what makes the ratio grow.
+	if curveExp > 0.6 {
+		t.Errorf("the curve path grew by x%.0f over x%d, an exponent of %.2f, want clearly under 1",
+			float64(curves)/float64(baseCurves), factor, curveExp)
+	}
+	if lineExp-curveExp < 0.25 {
+		t.Errorf("the exponents are %.2f and %.2f, a gap of %.2f, want the curve path to gain on the line path",
+			lineExp, curveExp, lineExp-curveExp)
+	}
+
+	ratio := float64(lines) / float64(curves)
+	baseRatio := float64(baseLines) / float64(baseCurves)
+	if ratio <= baseRatio {
+		t.Errorf("the line to curve ratio went from %.1f at x1 to %.1f at x%d, want it to grow",
+			baseRatio, ratio, factor)
+	}
+
+	t.Logf("disc: x1 lines %d, curves %d, ratio %.1f", baseLines, baseCurves, baseRatio)
+	t.Logf("disc: x%d lines %d, curves %d, ratio %.1f", factor, lines, curves, ratio)
+	t.Logf("exponents over x%d: lines %.2f, curves %.2f", factor, lineExp, curveExp)
+}
+
 func disc(w, h, r int, f func(x, y int) color.RGBA) (*pixelbuf.Image, *quant.Palette) {
 	return solid(w, h, func(x, y int) color.RGBA {
 		dx, dy := float64(x)-float64(w)/2, float64(y)-float64(h)/2
