@@ -69,6 +69,17 @@ et ne paie ni le tracking ni le format. Il justifie d'écrire D1 pour le contenu
 UI, pas d'en faire un mode vidéo universel ni de promettre le même gain sur une
 scène en mouvement.
 
+**V1 écrite.** `internal/anim` et `cmd/svgvid` émettent `poster.svg`, des
+keyframes, des deltas, `timeline.json` et `index.html`. La palette est globale au
+clip (échantillon strided de toutes les frames), un pixel inchangé est
+transparent dans le delta — donc aucun rectangle de fond —, et un keyframe est
+inséré quand le delta n'est pas strictement moins cher, quand il repeint plus de
+90 % de l'image, ou à `-gop`. Sur la même séquence `ui/panel` + disque mobile
+(24 frames, 2,2 % de changements, 11 couleurs effectives) : **12 906 nœuds
+contre 53 723 en toutes-I (4,2×)** en lignes, **1 936 contre 10 046 (5,2×)** en
+courbes. Le format et le player sont décrits dans [video.md](video.md) ; le
+tracking et l'animation par transformation (§5.1, §5.3) restent ouverts.
+
 ## Phase 0 — Instrumentation (la phase la plus importante)
 
 **Pourquoi d'abord.** Sans mesure, tout le reste est de l'intuition. Et parce
@@ -312,13 +323,13 @@ Le player fait du scrubbing fluide.
 | M2 | Traceur v1 | qualité `potrace`, `d` ≤ `svgo`, zéro dépendance |
 | M3 | Modes spécialisés | pixel art, screenshot+texte, trait, photo/refus |
 | M4 | Sémantique | a11y, IDs stables, diffs VCS lisibles |
-| M5 | Vidéo v1 | 3 s d'animation 2D sous budget, 60 fps |
+| M5 | Vidéo v1 | conteneur écrit (`poster.svg` + keyframes + deltas + sidecar + player) ; reste le tracking, la transformation et la lecture à 60 fps |
 | M6 | Espace-temps | trajectoires, O(features) |
 | M7 | Outillage complet | CLIs, WASM, CI, docs |
 
 ## Points de décision (à trancher explicitement, pas par défaut)
 
-1. **Conteneur vidéo : A ou B** → bloque toute la Phase 5
+1. **Conteneur vidéo : A ou B** → **B, tranché** ; v1 écrite dans `internal/anim`
 2. **Pure Go obligatoire pour le cœur ?** → oui recommandé (sinon personne ne
    peut builder la lib) ; cgo toléré uniquement dans l'oracle de test
 3. **Level-set (marching squares) vs. contour binaire** → level-set, pour la

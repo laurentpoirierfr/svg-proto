@@ -14,7 +14,7 @@ SHELL := /bin/bash
 
 GO           ?= go
 GOBIN        := $(CURDIR)/bin
-BINARIES     := svgstat svgimg
+BINARIES     := svgstat svgimg svgvid
 MODULE       := github.com/elfeo/svg-proto
 CORPUS       := testdata/corpus
 ORACLE       ?= inkscape
