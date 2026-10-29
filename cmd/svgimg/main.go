@@ -60,11 +60,11 @@ func main() {
 		// says, because it never comes near a tight ceiling, while the line path
 		// is simplified until it does. So at 500 nodes per case both modes land
 		// on the same count and the ceiling decides, and the mode saves 15.6x at
-		// 20000. Measured on the thirteen flat-art corpus cases; the two photo
+		// 20000. Measured on the thirty-one non-photo corpus cases, 2.4x to 104x; the two photo
 		// cases give only 4x to 5x and their node count cannot be clamped at all,
 		// because it is dominated by the number of regions, not by edge sampling.
 		// See docs/phase2.md.
-		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase. Costs ~0.01 RMSE OKLab and saves 2x to 68x of nodes on flat art, 4x to 5x on photographs, and only if the node budget is loose: at -max-nodes 500 it saves nothing")
+		curves    = flag.Bool("curves", false, "for trace: fit Bezier segments instead of emitting the traced staircase. Costs ~0.01 RMSE OKLab and saves 2x to 104x of nodes outside photographs, 4x to 5x on photographs, and only if the node budget is loose: at -max-nodes 500 it saves nothing")
 		curveTol  = flag.Float64("curve-tol", 0.5, "for trace: largest distance in px between a fitted curve and the points it was fitted from")
 		curveSimp = flag.Float64("curve-simplify", 0, "for trace -curves: simplification tolerance in px that strips the tracing staircase before fitting (default 1.5)")
 	)

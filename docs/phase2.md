@@ -161,16 +161,24 @@ borne : c'est le contenu le plus dur, et il faut savoir ce que le mode y vaut
 plutôt que de l'extrapoler.
 
 Le corpus est dans `testdata/corpus/<categorie>/<nom>.svg` + `<nom>.png`, avec
-`make corpus-render` pour régénérer les rasters depuis les SVG. Les SVG sont
-écrits à la main et font foi : le raster est **dérivé** du SVG, pas collecté, donc
-un désaccord entre les deux est un bug du harness et non une tolérance à
-documenter. Vérifié : `embed` rejoue chaque raster à l'identique (AE=0), sauf
-`alpha/badge` — attendu, `embed` ne porte qu'un seul rectangle, et c'est
-précisément le cas que `trace` doit rendre via `fill-opacity`.
+`make corpus-render` pour régénérer les rasters depuis les SVG. Les SVG d'origine
+sont écrits à la main et font foi : le raster est **dérivé** du SVG, pas
+collecté, donc un désaccord entre les deux est un bug du harness et non une
+tolérance à documenter. Vérifié sur les cas écrits à la main : `embed` rejoue
+chaque raster à l'identique (AE=0), sauf `alpha/badge` — attendu, `embed` ne porte qu'un seul rectangle, et
+c'est précisément le cas que `trace` doit rendre via `fill-opacity`.
 
-Les deux cas `photo/` sont la seule exception : ils n'ont pas de SVG source, le
-PNG **est** la source, et `make corpus-render` les ignore puisqu'il ne rend que
-les `.svg`. C'est la catégorie `photo` que `CORPUS_CATS` prévoyait déjà.
+Les deux cas `photo/` sont une exception : ils n'ont pas de SVG source, le PNG
+**est** la source, et `make corpus-render` les ignore puisqu'il ne rend que les
+`.svg`. C'est la catégorie `photo` que `CORPUS_CATS` prévoyait déjà.
+
+Une seconde exception est l'apport tiers : dix-huit cas viennent de Feather
+Icons et de Bootstrap Icons, sous MIT, avec l'attribution complète dans
+[`ATTRIBUTION.md`](../testdata/corpus/ATTRIBUTION.md). `width` et `height` ont
+été portés à 256 pour rendre à une taille comparable, et `currentColor` remplacé
+par `#000` pour ne pas dépendre du défaut du moteur ; les tracés sont intacts. Ils restent dérivés du SVG et rejouables par
+`make corpus-render`, mais ils ne sont pas écrits à la main : la règle « le SVG
+fait foi » vaut pour eux aussi, la provenance en plus.
 
 | cas | ce qu'il teste |
 |---|---|
@@ -183,6 +191,9 @@ les `.svg`. C'est la catégorie `photo` que `CORPUS_CATS` prévoyait déjà.
 | `alpha/badge` | semi-transparence : 53 % de l'image en alpha nul |
 | `photo/des` | photographie 800×600, 89 060 couleurs : la borne du rendu fidèle |
 | `photo/tux` | photographie 386×395, 12 832 couleurs : le cas où le plafond ne peut pas mordre |
+| `lineart/{activity,anchor,compass,git-branch,scissors,umbrella,wind}` | Feather (MIT) : traits fins, courbes et diagonales |
+| `icon/{bezier,bezier2,bounding-box-circles,diagram-3,hurricane,infinity,moisture,vector-pen}` | Bootstrap (MIT) : courbes, spirales, remplissages |
+| `ui/{grid-3x3-gap,sliders,window-sidebar}` | Bootstrap (MIT) : glyphes d'interface |
 
 Le premier résultat a été le plus mauvais score de tout le projet :
 `alpha/badge` à 0,5485, **pire que `grid`**, et vingt fois pire que `runlength`.
@@ -551,32 +562,34 @@ ne baissent ; au-dessus, plus vite encore. Ces ratios sont sur les nœuds émis 
 une version antérieure de ce tableau donnait 10,2× parce qu'elle comptait les
 *points aplatis*, et l'erreur est la même que celle corrigée plus haut.
 
-Il n'existe **aucun réglage gratuit**. 4 cas sur 13 ne perdent rien à un réglage
-quelconque, les 9 autres paient. À 1,5, en nœuds :
+Il n'existe **presque aucun réglage gratuit**. À 1,5, sans plafond, en nœuds
+émis, sur ces treize cas :
 
 | cas | `trace` | `-curves` | ratio | Δscore | Δssim |
 |---|--:|--:|--:|--:|--:|
-| `synthetic/diagonal-stroke` | 9 916 | 145 | **68,4×** | +0,0177 | −0,0092 |
-| `synthetic/diagonal-square` | 9 278 | 165 | **56,2×** | +0,0041 | −0,0014 |
-| `synthetic/tri-blade` | 9 664 | 187 | **51,7×** | +0,0076 | −0,0025 |
-| `synthetic/chevron` | 2 809 | 64 | 43,9× | +0,0268 | −0,0174 |
-| `synthetic/arrow` | 1 480 | 38 | 38,9× | **−0,0001** | +0,0010 |
-| `synthetic/diag-stripes` | 2 226 | 108 | 20,6× | +0,0093 | −0,0043 |
-| `icon/gear` | 6 426 | 571 | 11,3× | +0,0174 | −0,0263 |
-| `logo/mark` | 17 827 | 1 614 | 11,0× | +0,0287 | −0,0217 |
-| `lineart/glyph` | 1 089 | 168 | 6,5× | +0,0009 | −0,0017 |
-| `alpha/badge` | 714 | 141 | 5,1× | +0,0019 | −0,0098 |
-| `ui/panel` | 1 365 | 573 | 2,4× | +0,0058 | −0,0021 |
-| `pixelart/blob` | 58 | 27 | 2,1× | +0,0068 | −0,0113 |
-| `logo/mark-scaled` | 2 897 | 2 634 | **1,1×** | +0,0071 | −0,0006 |
+| `synthetic/diagonal-stroke` | 9 896 | 95 | **104,2×** | +0,0177 | −0,0092 |
+| `synthetic/diagonal-square` | 9 256 | 111 | **83,4×** | +0,0041 | −0,0014 |
+| `synthetic/chevron` | 2 803 | 37 | **75,8×** | +0,0268 | −0,0174 |
+| `synthetic/tri-blade` | 9 640 | 139 | **69,4×** | +0,0076 | −0,0025 |
+| `synthetic/arrow` | 1 475 | 28 | 52,7× | **−0,0001** | +0,0010 |
+| `logo/mark-scaled` | 87 260 | 1 802 | 48,4× | +0,0088 | −0,0029 |
+| `synthetic/diag-stripes` | 2 214 | 54 | 41,0× | +0,0093 | −0,0043 |
+| `logo/mark` | 21 833 | 966 | 22,6× | +0,0274 | −0,0216 |
+| `icon/gear` | 6 405 | 409 | 15,7× | +0,0174 | −0,0263 |
+| `lineart/glyph` | 1 077 | 104 | 10,4× | +0,0009 | −0,0017 |
+| `alpha/badge` | 706 | 70 | 10,1× | +0,0019 | −0,0098 |
+| `ui/panel` | 1 304 | 361 | 3,6× | +0,0058 | −0,0021 |
+| `pixelart/blob` | 56 | 23 | 2,4× | +0,0068 | −0,0113 |
 
-**Ce tableau là n'est pas équitable, et il est remplacé plus bas.** Les deux modes
-recevaient `-max-nodes 20000` dans `corpus-bench`, donc le mode lignes était
-bridé au plafond pendant que le mode courbé, qui n'approche jamais 20 000, ne
-l'était pas. Sur `logo/mark` la boucle a escaladé la tolérance de 0,25 à 1,0
-pour passer sous le plafond, et c'est ce 17 827 qui est comparé au 1 614 du mode
-courbé. Le 1,1× de `logo/mark-scaled` est le même artefact, dans l'autre sens :
-là, c'est le 1024 qui a été bridé et réduit à 2 897.
+Un seul cas ne perd pas de score, `synthetic/arrow`, de 0,0001, ce qui est du
+bruit ; les douze autres paient. La plage va de 2,4× à 104,2×, et le prix ne suit
+pas le ratio : `pixelart/blob` paie +0,0068 pour 2,4× quand `synthetic/chevron`
+paie +0,0268 pour 75,8×.
+
+Les dix-huit icônes ajoutées depuis portent le corpus à trente et un cas hors
+photographie, et le même calcul y donne **29,3×** (169 538 → 5 781), avec une
+plage de 2,4× à 104,2× et trois cas qui ne paient pas. Elles ne changent donc
+pas la loi, seulement la moyenne, qu'elles tirent vers le bas.
 
 Ce qu'il faut comparer, c'est le même logo à deux résolutions, **sans plafond** :
 
@@ -634,21 +647,15 @@ honnête du mode : il n'est pas gratuit, même face à un adversaire dégradé.
 
 Compte tenu de D6, la lecture d'ensemble est favorable : la contrainte dure est le
 nombre de nœuds parce qu'elle ne se comprime pas, et sur cette contrainte le gain
-va de 1× à 68× pour environ 0,01 de RMSE OKLab. `-curves` reste **désactivé par
+va de 2,4× à 104,2× hors photographie, pour environ 0,01 de RMSE OKLab ; sur les
+deux photographies il tombe à 4,3× et 5,4×. `-curves` reste **désactivé par
 défaut** tant que la décision n'est pas prise explicitement, mais ce n'est plus
 « ne pas activer » par prudence, c'est « activer ou non, sur des chiffres ».
 
-Sur les deux photos de `assets/png`, en `-k 8` :
-
-| image | octets `trace` | octets `-curbes` | ratio | ssim `trace` | ssim `-curves` |
-|---|--:|--:|--:|--:|--:|
-| `des.png` | 884 745 | 291 852 | 3,0× | 0,8547 | 0,8531 |
-| `tux.png` | 680 581 | 183 450 | 3,7× | 0,7086 | 0,6968 |
-
-Donc le tableau s'est inversé : ce n'est plus une régression partout, c'est un
-**échange** — jusqu'à 12× moins de nœuds contre +0,005 à +0,028 de score, pour 0
-à −0,012 de ssim. `lineart/glyph` et `alpha/badge` s'améliorent même légèrement.
-`logo/mark-scaled` est le seul cas qui grossit, de 7 %.
+Les deux photographies, désormais cas du corpus, sont traitées en détail plus
+bas. En nœuds émis à `k=16`, elles échangent 157 014 → 36 829 (4,3×) et
+99 206 → 18 363 (5,4×) contre +0,006 et +0,017 de score, et surtout leur plafond
+de nœuds ne peut pas être tenu.
 
 `-curves` reste **désactivé par défaut** : c'est un arbitrage, pas un gain franc, et
 un mode qui dégrade la fidélité en silence n'a pas sa place dans un défaut. Il se
@@ -848,13 +855,17 @@ donc du budget que le programme s'autorise, et cette question-là n'est pas
 technique.
 
 Les deux protocoles sont donc compléments, pas concurrents. Sans plafond, sur le
-compteur de D6 — les nœuds émis : 36,7× sur 153 925 → 4 199 pour les treize cas
-d'art plat, Δscore moyen +0,0103, pire cas +0,0274 sur `logo/mark`, meilleur
-−0,0001 sur `synthetic/arrow`, donc du bruit. Avec un plafond de 4 000 : 5,9× sur
-24 656 → 4 199, Δscore moyen +0,0079. Le protocole bridé flatte la ligne, parce
-qu'il la dégrade, donc il sous-estime le mode. Le protocole libre est le bon pour
-« combien de nœuds coûte ce mode », le bridé est le bon pour « à budget fixé, qui
-est le plus fidèle ».
+compteur de D6 — les nœuds émis : **29,3×** sur 169 538 → 5 781 pour les trente et
+un cas hors photographie, Δscore moyen +0,0193, pire cas +0,0596 sur
+`lineart/wind`, meilleur **−0,0147** sur `icon/vector-pen`, qui s'améliore donc
+en passant aux courbes. Avec un plafond de 4 000 sur les treize cas d'origine :
+5,9× sur 24 656 → 4 199, Δscore moyen +0,0079 ; sur les trente-trois cas le même
+plafond donne 3,1×, mais les photographies ne peuvent pas être bridées — le
+chemin lignes y consomme 142 % du budget — donc ce chiffre n'est pas une
+propriété du mode. Le protocole bridé flatte la ligne, parce qu'il la dégrade,
+donc il sous-estime le mode. Le protocole libre est le bon pour « combien de
+nœuds coûte ce mode », le bridé est le bon pour « à budget fixé, qui est le plus
+fidèle ».
 
 Le 24,0× qui a circulé un moment venait du compteur de `svgstat`, dont la colonne
 `points` est le pointage *aplati* et non les nœuds émis : sur un path courbé elle
@@ -866,17 +877,18 @@ confusion ne se refasse pas.
 
 ### La photographie change le chiffre, et casse le plafond
 
-Les treize cas d'art plat donnaient 36,7× sans plafond. Les deux photographies,
-à tolérance égale et sans plafond, donnent :
+Les trente et un cas hors photographie donnent 29,3× sans plafond. Les deux
+photographies, à tolérance égale et sans plafond, donnent :
 
 | cas | lignes | courbes | ratio | Δscore |
 |---|--:|--:|--:|--:|
 | `photo/des` 800×600 | 157 014 | 36 829 | 4,3× | +0,0061 |
 | `photo/tux` 386×395 | 99 206 | 18 363 | 5,4× | +0,0174 |
 
-Le corpus complet, quinze cas : 410 145 → 59 391, soit **6,9×**. Le 36,7× était
-donc un artefact d'un corpus sans contenu photographique, et il ne faut pas le
-citer comme le gain du mode.
+Le corpus complet, trente-trois cas : 425 758 → 60 973, soit **7,0×**. Le 36,7×
+des treize cas d'origine n'était pas faux, il décrivait le sous-ensemble le plus
+favorable : sans photographie et avec six dessins synthétiques taillés pour lui.
+Il ne faut pas le citer comme le gain du mode.
 
 Plus grave pour D6 : **le plafond de nœuds ne peut pas mordre sur une photo.**
 À `-max-nodes 4000`, `des.png` escalade la tolérance de 0,25 à **1 838,97** — le
@@ -901,7 +913,7 @@ en dégradant l'image jusqu'à l'absurde.
    generale, c'est un mode qui compte quand le budget de noeuds est large. Le cout
    est constant, environ 0,01 de RMSE. Reste a decider si le defaut reste le chemin
    lignes et si le mode se documente par cette courbe ou par un seuil, et a quel
-   seuil. Le corpus reste mince sur le contenu : six des quinze cas sont
+   seuil. Le corpus reste mince sur le contenu : six des trente-trois cas sont
    synthetiques, et les deux photographies sont desormais la borne dure.
 2. ~~Un test qui verifie les lois d'echelle.~~ **Fait** :
    `TestLineNodesScaleWithResolutionAndCurveNodesDoNot`, qui synthetise ses
@@ -909,7 +921,7 @@ en dégradant l'image jusqu'à l'absurde.
    l'ecart entre les exposants, pas l'exposant lui-meme.
 3. **Etendre le corpus** vers les 30 a 60 cas prevus, ce qui decide notamment du
    sort de `prune` et donnerait a `ui/panel` le poids d'un cas reel et non d'un
-   seul exemple. La lacune photographique est comblee, mais quinze cas restent
+   seul exemple. La lacune photographique est comblee, mais trente-trois cas restent
    trop peu pour trancher `prune`. C'est le seul point de la Suite qui demande du
    travail humain et non une mesure de plus.
 4. Puis seulement : grain / tramage, et l'axe video de D1.

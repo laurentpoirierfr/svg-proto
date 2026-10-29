@@ -183,21 +183,21 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -bg white -out <sortie.svg>
 go run ./cmd/svgstat <sortie.svg> --ref <raster.png> -bg white
 
 # ajuster des Béziers au lieu d'émettre l'escalier. Désactivé par défaut, et ce
-# n'est pas un gain franc : le mode échange ~0,01 de RMSE OKLab contre 2,1× à
-# 68,4× de nœuds en moins sur le corpus. Le rapport dépend entièrement du
+# n'est pas un gain franc : le mode échange ~0,01 de RMSE OKLab contre 2,4× à
+# 104,2× de nœuds en moins hors photographie. Le rapport dépend entièrement du
 # plafond de nœuds, parce que le chemin courbé rend le même compte quel que soit
 # le plafond, tandis que le chemin lignes est simplifié jusqu'à l'y faire
-# tenir. Sur les treize cas du corpus, en `-mode trace -k 16 -tol 0.25` :
+# tenir. Sur les treize cas d'origine, en `-mode trace -k 16 -tol 0.25` :
 #
 #   plafond  500   1 000   2 000   4 000   8 000  20 000  aucun
 #   lignes   4 295  7 764  11 388 24 656 46 595  65 431  153 925
 #   courbes  4 199  4 199  4 199  4 199  4 199  4 199  4 199
 #   rapport  1,0×   1,8×   2,7×   5,9×  11,1×  15,6×  36,7×
 #
-# Ces 36,7× ne valent que pour de l'art plat. Les deux photographies du corpus,
-# `photo/des` et `photo/tux`, ne donnent que 4,3× et 5,4× à tolérance égale, et le
-# corpus complet tombe de 36,7× à 6,9× : le rapport moyen était un artefact d'un
-# corpus sans contenu photographique. Le plafond de nœuds ne peut de plus pas
+# Ces 36,7× ne décrivent que les treize cas d'origine. Le corpus étendu à
+# trente-trois cas (dont 18 icônes MIT et 2 photographies) donne 29,3× hors
+# photographie et 7,0× au total ; `photo/des` et `photo/tux` ne donnent que 4,3×
+# et 5,4× à tolérance égale. Le plafond de nœuds ne peut de plus pas
 # mordre sur une photo : à `-max-nodes 4000`, `des.png` fait monter la tolérance
 # de 0,25 à 1 839 et rend quand même 114 218 nœuds, parce que le compte y est
 # dominé par le nombre de régions et pas par l'échantillonnage des bords. La
@@ -216,10 +216,10 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <so
 
 | phase | contenu | état |
 |---|---|---|
-| 0 | instrument de mesure | **fait** — corpus de 15 cas (dont 2 photographies) dans `testdata/corpus/<cat>/<nom>.{svg,png}`, mesuré dans [docs/corpus-bench.md](docs/corpus-bench.md) |
+| 0 | instrument de mesure | **fait** — corpus de 33 cas (dont 2 photographies et 18 icônes tierces MIT) dans `testdata/corpus/<cat>/<nom>.{svg,png}`, mesuré dans [docs/corpus-bench.md](docs/corpus-bench.md) |
 | 1 | baselines (encapsulation, grille, run-length) | **fait** — mesuré sur `assets/png`, voir [docs/phase1.md](docs/phase1.md) |
 | 2 | traceur de contours — le cœur | **fait** — 4 à 17 éléments DOM au lieu de 68 à 2 247 sur le corpus, voir [docs/phase2.md](docs/phase2.md) |
-| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,1× à 68,4× de nœuds contre ~0,01 de score sur l'art plat, mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 6,9× sur les quinze cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
+| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,4× à 104,2× de nœuds contre ~0,01 de score hors photographie, mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 7,0× sur les trente-trois cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
 | 3 | modes (pixel art, screenshot+texte, trait, photo) | à faire |
 | 4 | sémantique, accessibilité, IDs stables | à faire |
 | 5 | vidéo (tracking, delta, animation par transformation) | à faire |
