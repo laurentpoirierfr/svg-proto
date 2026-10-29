@@ -227,5 +227,7 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <so
 
 ## Licence
 
-À définir.
+Le projet est sous [MIT](LICENSE). Les assets de test et les dépendances gardent
+leur propre licence ; les icônes tierces du corpus sont attribuées dans
+[testdata/corpus/ATTRIBUTION.md](testdata/corpus/ATTRIBUTION.md).
 
