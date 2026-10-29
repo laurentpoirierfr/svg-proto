@@ -183,8 +183,8 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -bg white -out <sortie.svg>
 go run ./cmd/svgstat <sortie.svg> --ref <raster.png> -bg white
 
 # ajuster des Béziers au lieu d'émettre l'escalier. Désactivé par défaut, et ce
-# n'est pas un gain franc : le mode échange ~0,01 de RMSE OKLab contre 2,4× à
-# 104,2× de nœuds en moins hors photographie. Le rapport dépend entièrement du
+# n'est pas un gain franc : le mode échange +0,0193 de RMSE OKLab en moyenne
+# (jusqu'à +0,06) contre 2,4× à 104,2× de nœuds en moins hors photographie. Le rapport dépend entièrement du
 # plafond de nœuds, parce que le chemin courbé rend le même compte quel que soit
 # le plafond, tandis que le chemin lignes est simplifié jusqu'à l'y faire
 # tenir. Sur les treize cas d'origine, en `-mode trace -k 16 -tol 0.25` :
@@ -219,7 +219,7 @@ go run ./cmd/svgimg -in <raster.png> -mode trace -curves -curve-tol 0.4 -out <so
 | 0 | instrument de mesure | **fait** — corpus de 33 cas (dont 2 photographies et 18 icônes tierces MIT) dans `testdata/corpus/<cat>/<nom>.{svg,png}`, mesuré dans [docs/corpus-bench.md](docs/corpus-bench.md) |
 | 1 | baselines (encapsulation, grille, run-length) | **fait** — mesuré sur `assets/png`, voir [docs/phase1.md](docs/phase1.md) |
 | 2 | traceur de contours — le cœur | **fait** — 4 à 17 éléments DOM au lieu de 68 à 2 247 sur le corpus, voir [docs/phase2.md](docs/phase2.md) |
-| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,4× à 104,2× de nœuds contre ~0,01 de score hors photographie, mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 7,0× sur les trente-trois cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
+| 2b | ajustement de Béziers (`internal/curvefit`, `internal/polygon`) | **écrit, non activé** — le fitter est juste (cercle de 724 points → 8 cubiques) ; l'intégration avait perdu parce qu'elle ajustait la marche du tracé, elle échange 2,4× à 104,2× de nœuds contre +0,0193 de score en moyenne hors photographie (jusqu'à +0,06), mais seulement 4,3× à 5,4× sur les deux photographies du corpus, où le plafond de nœuds ne peut pas mordre. Le rapport est une fonction du plafond de nœuds, pas du mode : 15,6× à `-max-nodes 20000`, 5,9× à 4 000, 1,0× à 500, et 7,0× sur les trente-trois cas sans plafond. Voir [docs/phase2.md](docs/phase2.md) |
 | 3 | modes (pixel art, screenshot+texte, trait, photo) | à faire |
 | 4 | sémantique, accessibilité, IDs stables | à faire |
 | 5 | vidéo (tracking, delta, animation par transformation) | à faire |

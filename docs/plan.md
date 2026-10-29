@@ -131,8 +131,10 @@ Implémentation de la stratégie D du §3 de la réflexion, étage par étage.
 5. `internal/simplify` — Douglas-Peucker à **tolérance pondérée par le gradient**,
    suppression des colinéaires
 6. `internal/polygon` + `internal/curvefit` — coins réels contre artefacts de raster,
-   puis ajustement de Béziers (Schneider). Le paquet existe et est testé ; il est
-   désactivé tant que `polygon` ne remplace pas la marche d'escalier en entrée
+   puis ajustement de Béziers (Schneider). Le paquet existe, est testé et branché
+   sur `trace -curves` : il reçoit l'escalier simplifié (`-curve-simplify`), pas la
+   marche brute. Désactivé par défaut pour une raison de fidélité mesurée, pas
+   parce que l'intégration serait inachevée (voir phase 2)
 7. `internal/pathdata` — construction et **minimisation** des `d` (abs/rel au
    caractère près, quantification relative, `h`/`v`/`s`/`t`)
 8. `internal/dom` — l'arbre SVG interne (aucune chaîne avant la fin !)
