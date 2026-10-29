@@ -192,7 +192,11 @@ stratégique si le projet a du succès** — voir §13.
 - **Pas de tramage.** C'est contre-intuitif et c'est capital : le tramage
   (Floyd-Steinberg) crée du bruit haute fréquence, et le bruit vectorise
   **catastrophiquement** (des milliers de micro-contours). L'ordre correct est
-  : *quantifier plat → tracer*. L'inverse est un désastre.
+  : *quantifier plat → tracer*. L'inverse est un désastre. Mesuré depuis sur
+  les deux photos du corpus : 8 à 11× plus de boucles et 2,1 à 3,5× plus de
+  nœuds (6,9 à 9,3× avec les courbes), pour 1,4 à 5,1× moins d'erreur de
+  palette ; inerte sur l'art plat, et effacé par le chemin courbé. Voir
+  `docs/phase2.md`, « Le tramage, mesuré et refusé ».
 - Un article du blog de la lib : « nous ne tramons pas, voici pourquoi ».
 
 ### 4.3 Champs et level-sets — **où se gagne la qualité**
