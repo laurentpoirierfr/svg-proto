@@ -46,6 +46,29 @@ ni plus proche** du source. Les criteria restent le score composite et le ratio
 
 ---
 
+### D1 en détail : ce que le delta vaut, mesuré
+
+Avant d'écrire le sidecar, la question est de savoir si les keyframes + delta
+valent quelque chose sur du contenu plat/UI. Mesure sur 24 frames, palette
+globale stable (`k=16`), en comparant toutes-I-frames à « clé + masques de delta
+par couleur », les deux tracés par le même encodeur :
+
+| séquence | I-frames lignes | I-frames courbes | clé+delta lignes | clé+delta courbes |
+|---|--:|--:|--:|--:|
+| plat synthétique, tout bouge | 28 392 | 1 874 | 21 516 (1,3×) | 2 182 (0,9×) |
+| `ui/panel` + petit disque, 2,2 % de pixels changés | 65 278 | 16 497 | 9 381 (7,0×) | 1 986 (8,3×) |
+
+Quand tout bouge et que les formes sont simples, le chemin courbé par frame
+écrase déjà le delta. Quand le décor est complexe et majoritairement statique —
+le cas visé, UI et captures — le delta gagne 7 à 8×, parce qu'il ne repaie que
+2 % de l'image. Le gain est donc une **fonction de la fraction statique et de sa
+complexité**, pas de « la vidéo » en général.
+
+C'est un plafond optimiste : le probe suppose la palette stable sur tout le GOP
+et ne paie ni le tracking ni le format. Il justifie d'écrire D1 pour le contenu
+UI, pas d'en faire un mode vidéo universel ni de promettre le même gain sur une
+scène en mouvement.
+
 ## Phase 0 — Instrumentation (la phase la plus importante)
 
 **Pourquoi d'abord.** Sans mesure, tout le reste est de l'intuition. Et parce
@@ -54,8 +77,9 @@ algorithme, sinon on se compare au mauvais référentiel.
 
 ### Livrables
 
-1. **Corpus de test** — * amorcé : 7 cas dans `testdata/corpus/` ; reste à étendre (~30–60 images, avec licence
-   et attribution dans un `manifest.yaml`) :
+1. **Corpus de test** — * 33 cas dans `testdata/corpus/` (18 icônes MIT, 2
+   photos), avec attribution dans `ATTRIBUTION.md` ; reste la scène
+   d'animation (24 frames) pour la phase vidéo :
    - logos / icônes (flat, 2–4 couleurs)
    - captures d'écran (UI, beaucoup d'aplats, du texte)
    - dessin au trait / croquis

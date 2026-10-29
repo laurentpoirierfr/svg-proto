@@ -963,4 +963,6 @@ en dégradant l'image jusqu'à l'absurde.
    tramage multiplie les boucles par 8 à 11 et les nœuds par 2,1 à 3,5 (6,9 à
    9,3 avec les courbes) sur les photos, pour 1,4 à 5,1× moins d'erreur de
    palette ; inerte sur l'art plat. Aucun mode ajouté.
-5. L'axe vidéo de D1.
+5. L'axe vidéo de D1 : **mesuré** — clé+delta vaut 7 à 8× sur une UI
+   complexe majoritairement statique (2,2 % de pixels changés), mais perd face
+   aux courbes quand tout bouge. Reste à écrire le sidecar et le tracking.
