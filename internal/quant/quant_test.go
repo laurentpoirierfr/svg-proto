@@ -269,7 +269,7 @@ func TestKIsAnUpperBoundNotATarget(t *testing.T) {
 	}
 	for _, k := range []int{4, 8, 16} {
 		pal := reduceImage(im, Options{K: k, Bits: DefaultBits, AlphaFloor: 1.0 / 255,
-			Weighted: true, MergeDelta: DefaultMergeDelta})
+			Weighted: true})
 		if pal.Len() > len(cols) {
 			t.Errorf("K=%d produced %d entries for a %d-colour image", k, pal.Len(), len(cols))
 		}
@@ -293,7 +293,7 @@ func TestLoneSpeckKeepsItsEntrySoMinAreaCanDropTheRegion(t *testing.T) {
 	}
 	im.SetNRGBA(10, 10, color.NRGBA{R: 255, A: 255})
 	im.SetNRGBA(11, 10, color.NRGBA{R: 255, A: 255})
-	pal := reduceImage(im, Options{K: 16, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true, MergeDelta: DefaultMergeDelta})
+	pal := reduceImage(im, Options{K: 16, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true})
 	if pal.Len() != 2 {
 		t.Errorf("palette has %d colours, want 2: a 2-pixel red dot on black was merged away", pal.Len())
 	}
@@ -312,57 +312,17 @@ func TestSmallImagesStillReduceExactly(t *testing.T) {
 			im.SetNRGBA(x, y, cols[y])
 		}
 	}
-	pal := reduceImage(im, Options{K: 3, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true, MergeDelta: DefaultMergeDelta})
+	pal := reduceImage(im, Options{K: 3, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true})
 	if pal.Len() != 3 {
 		t.Errorf("palette has %d colours, want 3: the floor blocked the splits", pal.Len())
 	}
 }
 
-// Merging is a redundancy test, not an area test, and that choice is the whole
-// reason the encoder keeps its MinArea knob. An area-based rule cannot tell a
-// one-pixel antialiasing artefact from a one-pixel logo detail: they weigh the
-// same. A colour-distance rule separates them without knowing which is which,
-// because an artefact is by definition very close to the colour it borders, while
-// a detail has a colour of its own.
-func TestMergeKeepsColoursThatAreActuallyDistinct(t *testing.T) {
-	// Three boxes: two near-duplicates and one far away. The first pair is what an
-	// antialiasing fringe looks like and must fold. The third is a mark, and folding
-	// it would delete it inside the palette where the caller has no knob left.
-	cells := []cell{
-		{nAlpha: 130, sumL: 0.50 * 130},
-		{nAlpha: 790, sumL: 0.504 * 790},
-		{nAlpha: 12, sumL: 0.05 * 12},
-	}
-	shared := []int{0, 1, 2}
-	boxes := [][]int{shared[:1], shared[1:2], shared[2:]}
-	kept, merged := prune(boxes, cells, DefaultMergeDelta)
-	if merged != 1 {
-		t.Errorf("merged %d boxes, want 1: a colour-distance merge must only fold near-duplicates", merged)
-	}
-	if len(kept) != 2 {
-		t.Fatalf("kept %d boxes, want 2", len(kept))
-	}
-	// The far box must still be carrying its own cell, so MinArea can find a region
-	// to judge later.
-	keptFar := false
-	for _, b := range kept {
-		for _, ci := range b {
-			if ci == 2 {
-				keptFar = true
-			}
-		}
-	}
-	if !keptFar {
-		t.Error("the distinct colour was merged away, leaving the encoder nothing to apply MinArea to")
-	}
-}
-
-// And the failure mode an area rule would produce, on the corpus case that
-// motivated the change: a one-pixel white line is 0,125% of a 40x20 image, which
-// is under any relative area threshold, and it is a real part of the drawing. A
-// palette that folds it deletes the line here, where the caller has no knob, and
-// MinArea never learns there was a region to judge.
-func TestMergeDoesNotFoldADistinctColourJustBecauseItIsThin(t *testing.T) {
+// A one-pixel white line is 0,125% of a 40x20 image, under any relative area
+// threshold, and a real part of the drawing. The palette must keep it so the
+// encoder's MinArea can decide whether the region is worth a path; folding it
+// inside the palette would delete it where the caller has no knob.
+func TestThinDistinctColourKeepsItsEntry(t *testing.T) {
 	im := image.NewNRGBA(image.Rect(0, 0, 40, 20))
 	for y := 0; y < 20; y++ {
 		for x := 0; x < 40; x++ {
@@ -375,78 +335,8 @@ func TestMergeDoesNotFoldADistinctColourJustBecauseItIsThin(t *testing.T) {
 		im.SetNRGBA(20, y, color.NRGBA{R: 255, G: 255, B: 255, A: 255})
 	}
 	pal := reduceImage(im, Options{K: 16, Bits: DefaultBits, AlphaFloor: 1.0 / 255,
-		Weighted: true, MergeDelta: DefaultMergeDelta})
+		Weighted: true})
 	if pal.Len() != 2 {
 		t.Errorf("palette has %d colours, want 2: a 1px white line on black needs its own entry", pal.Len())
 	}
-	if pal.Merged != 0 {
-		t.Errorf("Merged = %d, want 0: nothing here is redundant", pal.Merged)
-	}
-}
-
-// bisect returns b[:h] and b[h]: two slices of one array. Merging one box into
-// another used to append in place, which overwrote a neighbouring box and made one
-// colour silently absorb another. On alpha/badge the red square turned navy, which
-// is how this was found.
-func TestMergeDoesNotCorruptAdjacentBoxes(t *testing.T) {
-	// Three single-cell boxes that are adjacent views of one backing array, the
-	// exact shape bisect produces. The outer two are far apart in colour so they
-	// cannot be merged with each other; the middle one is a near-duplicate of the
-	// first and must fold into it without disturbing the third.
-	cells := []cell{
-		{nAlpha: 100, sumL: 0.20 * 100},
-		{nAlpha: 100, sumL: 0.201 * 100},
-		{nAlpha: 100, sumL: 0.90 * 100},
-	}
-	shared := []int{0, 1, 2}
-	boxes := [][]int{shared[:1], shared[1:2], shared[2:]}
-	kept, merged := prune(boxes, cells, DefaultMergeDelta)
-	if merged != 1 {
-		t.Errorf("merged %d boxes, want 1", merged)
-	}
-	if len(kept) != 2 {
-		t.Fatalf("kept %d boxes, want 2", len(kept))
-	}
-	// Every original cell must still be present exactly once. Losing or
-	// duplicating a cell here is what turned one colour into another.
-	seen := map[int]int{}
-	for _, b := range kept {
-		for _, ci := range b {
-			seen[ci]++
-		}
-	}
-	for ci := 0; ci < 3; ci++ {
-		if seen[ci] != 1 {
-			t.Errorf("cell %d appears %d times across the kept boxes, want 1", ci, seen[ci])
-		}
-	}
-	// The far box must have kept its own identity.
-	found := false
-	for _, b := range kept {
-		for _, ci := range b {
-			if ci == 2 {
-				found = true
-			}
-		}
-	}
-	if !found {
-		t.Error("the distant box lost its cell to the merge")
-	}
-}
-
-// K is an upper bound, not a target, and that has to be visible rather than
-// inferred: a caller asking for 16 colours on a 3-colour image should be able to
-// tell that 13 slots went unused.
-func TestMergedReportsUnusedSlots(t *testing.T) {
-	im := image.NewNRGBA(image.Rect(0, 0, 16, 16))
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			im.SetNRGBA(x, y, color.NRGBA{R: uint8(x * 16), G: uint8(y * 16), B: 128, A: 255})
-		}
-	}
-	pal := reduceImage(im, Options{K: 16, Bits: DefaultBits, AlphaFloor: 1.0 / 255, Weighted: true, MergeDelta: DefaultMergeDelta})
-	if pal.Merged < 0 || pal.Merged >= 16 {
-		t.Errorf("Merged = %d, which cannot describe a %d-entry palette", pal.Merged, pal.Len())
-	}
-	t.Logf("k=16 on a smooth ramp: %d entries, %d merged", pal.Len(), pal.Merged)
 }
